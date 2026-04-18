@@ -49,11 +49,11 @@ Beyond the core development, I established a robust analytical foundation by des
 
 ### Technical Stack
 
-* **Frontend:** ReactJS (Interactive User Experience)
-* **Backend:** Node.js / FastAPI (Business Logic & RESTful APIs)
+* **Frontend:** ReactJS / TypeScript (Interactive & Type-safe User Experience)
+* **Backend:** Node.js / Python - FastAPI (Business Logic & RESTful APIs)
 * **Database:** PostgreSQL (Relational Data Integrity)
 * **Tunneling:** Ngrok (Environment Sharing & Remote Testing)
-* **Documentation Tools:** Draw.io, Figma, MS SQL Server (Model Design)
+* **Documentation & Analysis:** Draw.io, Figma, Google NotebookLM (AI-powered Research & Knowledge Management)
 
 
 ---
