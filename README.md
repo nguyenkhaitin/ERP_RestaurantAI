@@ -4,6 +4,8 @@
 
 **Live Demo:** [nguyenkhaitin.github.io/RestaurantAI/](https://nguyenkhaitin.github.io/RestaurantAI/)
 
+<img width="1380" height="821" alt="image" src="https://github.com/user-attachments/assets/8016f120-b95d-40ec-ba14-99f3d49e720f" />
+
 ---
 
 ### Key Roles & Responsibilities
@@ -20,6 +22,9 @@ As the **Full-cycle System Analyst & Developer**, I managed the entire project l
 
 The system is structured into high-value modules that address critical business pain points:
 
+<img width="1138" height="633" alt="image" src="https://github.com/user-attachments/assets/339577c9-ae80-4358-8a64-8da2ace0ebf6" />
+
+
 1.  **Floor Operations:**
     * Real-time Table Mapping integrated with AI Computer Vision data.
     * Full-cycle Ordering, Menu Management, and Serving workflows.
@@ -33,6 +38,27 @@ The system is structured into high-value modules that address critical business 
     * Real-time video data ingestion into the management dashboard.
     * Intelligent Mock AI Assistant to handle on-site operational queries.
 
+
+---
+
+### System Analysis & Documentation
+While the project followed an agile, "implementation-first" approach, the following standard BA documentations were developed to ensure system scalability:
+* **Context Diagram:** Mapping external entities and high-level system interactions.
+  <img width="1367" height="239" alt="image" src="https://github.com/user-attachments/assets/02687273-3f0e-4ef2-afe9-762f8b6ea6e0" />
+
+* **Business Function Diagram (BFD):** Hierarchical decomposition of system capabilities.
+  <img width="924" height="490" alt="image" src="https://github.com/user-attachments/assets/eb26592e-158e-44ca-af93-629d97e0d60d" />
+
+* **Use Case Diagrams:** Detailed behavioral analysis for each user persona.
+  <img width="805" height="626" alt="image" src="https://github.com/user-attachments/assets/e11b56c9-8092-45cd-b4cd-0928f6a2d474" />
+
+* **System Architecture:** Designed a robust 3-tier model connecting UI, Logic, and Data.
+  <img width="1132" height="616" alt="image" src="https://github.com/user-attachments/assets/7aa151d5-95c8-4196-91a1-464c88ddee19" />
+
+* **Relational Data Model (RDM):** A comprehensive schema designed to handle complex relationships between staff, orders, and AI metadata.
+<img width="1050" height="930" alt="image" src="https://github.com/user-attachments/assets/e9146c1a-4b57-4ee9-a019-3c37ed755cb5" />
+
+
 ---
 
 ### Technical Stack
@@ -43,15 +69,6 @@ The system is structured into high-value modules that address critical business 
 * **Tunneling:** Ngrok (Environment Sharing & Remote Testing)
 * **Documentation Tools:** Draw.io, Figma, MS SQL Server (Model Design)
 
----
-
-### System Analysis & Documentation
-While the project followed an agile, "implementation-first" approach, the following standard BA documentations were developed to ensure system scalability:
-* **Context Diagram:** Mapping external entities and high-level system interactions.
-* **Business Function Diagram (BFD):** Hierarchical decomposition of system capabilities.
-* **Use Case Diagrams:** Detailed behavioral analysis for each user persona.
-* **System Architecture:** Designed a robust 3-tier model connecting UI, Logic, and Data.
-* **Relational Data Model (RDM):** A comprehensive schema designed to handle complex relationships between staff, orders, and AI metadata.
 
 ---
 
