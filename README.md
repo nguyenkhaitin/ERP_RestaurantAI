@@ -4,7 +4,7 @@
 
 **Live Demo:** [nguyenkhaitin.github.io/RestaurantAI/](https://nguyenkhaitin.github.io/RestaurantAI/)
 
-<img width="1051" height="603" alt="image" src="https://github.com/user-attachments/assets/4556ea77-58a9-4409-b6ba-75d15c1784bb" />
+<img width="1093" height="619" alt="image" src="https://github.com/user-attachments/assets/b687c063-3eaf-4196-ae58-e52935ca213a" />
 
 ---
 
