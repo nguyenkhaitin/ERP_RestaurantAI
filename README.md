@@ -4,12 +4,12 @@
 
 **Live Demo:** [nguyenkhaitin.github.io/RestaurantAI/](https://nguyenkhaitin.github.io/RestaurantAI/)
 
-<img width="1093" height="619" alt="image" src="https://github.com/user-attachments/assets/b687c063-3eaf-4196-ae58-e52935ca213a" />
+<img width="1739" height="998" alt="image" src="https://github.com/user-attachments/assets/c0dcc548-f8ab-42d1-8974-d86ccfe52bf8" />
 
 ---
 
-### Key Roles & Responsibilities
-As a **Technical Business Analyst & System Implementer**, I managed the project from requirement elicitation to final deployment. While focusing heavily on system architecture and business logic, I also took a hands-on technical role in database engineering, API integration, and DevOps setup:
+### My Roles: Technical Business Analyst & System Implementer
+I managed the project from requirement elicitation to final deployment. While focusing heavily on system architecture and business logic, I also took a hands-on technical role in database engineering, API integration, and DevOps setup:
 * **System Analysis & Architecture:** Designed the 3-tier architecture and mapped complex data flows between the Frontend, Backend, and Database.
 * **Database Management:** Solely responsible for the **Relational Data Model (RDM)** and schema implementation on **PostgreSQL**.
 * **UX/UI Design:** Conceptualized and executed the interface design on **Figma**, ensuring a user-centric experience for diverse roles (Admin, Manager, Staff).
