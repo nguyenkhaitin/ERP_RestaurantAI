@@ -1,5 +1,16 @@
-import { useState, useRef } from 'react';
-import { Plus, Circle, Square, Minus, MousePointer, Save, Play, Video, Wifi, WifiOff, Trash2 } from 'lucide-react';
+﻿/**
+ * =============================================
+ * AI CONFIGURATION - Cấu Hình Hệ Thống AI
+ * MERGED: Includes CameraManager and CameraAdvancedSettings inline
+ * =============================================
+ */
+
+import { useState } from 'react';
+import { Plus, Video, Wifi, WifiOff, Trash2, Edit2, Save, X, Settings, ChevronDown } from 'lucide-react';
+
+// ==========================================
+// INTERFACES
+// ==========================================
 
 interface Camera {
   id: string;
@@ -8,88 +19,683 @@ interface Camera {
   rtspUrl: string;
   status: 'online' | 'offline' | 'weak';
   branch: string;
+  resolution?: string;
+  frameRate?: number;
+  bitrate?: string;
 }
 
-interface Zone {
-  id: string;
-  type: 'table' | 'walkway' | 'ignore' | 'entrance';
-  points: { x: number; y: number }[];
-  label?: string;
-  capacity?: number;
+interface CameraAdvancedSettingsState {
+  brightness: number;
+  contrast: number;
+  saturation: number;
+  zoom: number;
+  focusMode: 'auto' | 'manual';
+  isoLevel: 'auto' | '100' | '400' | '800' | '1600';
+  whiteBalance: 'auto' | 'daylight' | 'cloudy' | 'tungsten' | 'fluorescent';
+  exposureMode: 'auto' | 'manual';
+  noiseReduction: 'low' | 'medium' | 'high' | 'off';
+  recordingQuality: 'low' | 'medium' | 'high' | 'ultra';
+  streamingMode: 'constant' | 'adaptive' | 'variable';
+  motionDetection: boolean;
+  motionSensitivity: number;
+  nightVisionMode: 'auto' | 'on' | 'off';
 }
+
+// ==========================================
+// SUB-COMPONENT: CameraAdvancedSettings
+// ==========================================
+
+const CameraAdvancedSettings = ({
+  camera,
+  onUpdate,
+  onClose
+}: {
+  camera: Camera;
+  onUpdate: (camera: Camera) => void;
+  onClose: () => void;
+}) => {
+  const [settings, setSettings] = useState<CameraAdvancedSettingsState>({
+    brightness: 50,
+    contrast: 50,
+    saturation: 50,
+    zoom: 1,
+    focusMode: 'auto',
+    isoLevel: 'auto',
+    whiteBalance: 'auto',
+    exposureMode: 'auto',
+    noiseReduction: 'medium',
+    recordingQuality: 'high',
+    streamingMode: 'adaptive',
+    motionDetection: true,
+    motionSensitivity: 50,
+    nightVisionMode: 'auto',
+  });
+
+  const handleSave = () => {
+    console.log('Camera advanced settings saved:', settings);
+    onClose();
+  };
+
+  const resetToDefault = () => {
+    setSettings({
+      brightness: 50,
+      contrast: 50,
+      saturation: 50,
+      zoom: 1,
+      focusMode: 'auto',
+      isoLevel: 'auto',
+      whiteBalance: 'auto',
+      exposureMode: 'auto',
+      noiseReduction: 'medium',
+      recordingQuality: 'high',
+      streamingMode: 'adaptive',
+      motionDetection: true,
+      motionSensitivity: 50,
+      nightVisionMode: 'auto',
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg w-full max-w-md max-h-[85vh] overflow-y-auto flex flex-col" style={{ boxShadow: 'var(--shadow-elevated)' }}>
+        {/* Header */}
+        <div className="sticky top-0 p-3 border-b bg-white flex items-center justify-between z-10">
+          <div>
+            <h3 className="font-semibold text-sm">Cấu Hình Nâng Cao</h3>
+            <p className="text-xs text-text-secondary">{camera.name}</p>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1.5 hover:bg-gray-100 rounded transition-colors"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-3 space-y-3">
+          {/* Image Quality Section */}
+          <div className="border border-gray-200 rounded p-2">
+            <h4 className="font-medium text-xs mb-2">Chất Lượng Hình Ảnh</h4>
+            <div className="space-y-2">
+              {/* Brightness */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-medium">Độ sáng</label>
+                  <span className="text-xs text-text-secondary">{settings.brightness}%</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={settings.brightness}
+                  onChange={(e) => setSettings({ ...settings, brightness: parseInt(e.target.value) })}
+                  className="w-full h-1"
+                />
+              </div>
+
+              {/* Contrast */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-medium">Tương phản</label>
+                  <span className="text-xs text-text-secondary">{settings.contrast}%</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={settings.contrast}
+                  onChange={(e) => setSettings({ ...settings, contrast: parseInt(e.target.value) })}
+                  className="w-full h-1"
+                />
+              </div>
+
+              {/* Saturation */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-medium">Bão hòa</label>
+                  <span className="text-xs text-text-secondary">{settings.saturation}%</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={settings.saturation}
+                  onChange={(e) => setSettings({ ...settings, saturation: parseInt(e.target.value) })}
+                  className="w-full h-1"
+                />
+              </div>
+
+              {/* Zoom */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-medium">Zoom</label>
+                  <span className="text-xs text-text-secondary">{settings.zoom.toFixed(1)}x</span>
+                </div>
+                <input
+                  type="range"
+                  min="1"
+                  max="4"
+                  step="0.1"
+                  value={settings.zoom}
+                  onChange={(e) => setSettings({ ...settings, zoom: parseFloat(e.target.value) })}
+                  className="w-full h-1"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Camera Settings Section */}
+          <div className="border border-gray-200 rounded p-2">
+            <h4 className="font-medium text-xs mb-2">Cài Đặt Camera</h4>
+            <div className="space-y-2">
+              {/* ISO Level */}
+              <div>
+                <label className="text-xs font-medium block mb-1">Mức ISO</label>
+                <select
+                  value={settings.isoLevel}
+                  onChange={(e) => setSettings({ ...settings, isoLevel: e.target.value as any })}
+                  className="w-full px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-primary/30"
+                >
+                  <option value="auto">Tự động</option>
+                  <option value="100">ISO 100</option>
+                  <option value="400">ISO 400</option>
+                  <option value="800">ISO 800</option>
+                  <option value="1600">ISO 1600</option>
+                </select>
+              </div>
+
+              {/* White Balance */}
+              <div>
+                <label className="text-xs font-medium block mb-1">Cân bằng trắng</label>
+                <select
+                  value={settings.whiteBalance}
+                  onChange={(e) => setSettings({ ...settings, whiteBalance: e.target.value as any })}
+                  className="w-full px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-primary/30"
+                >
+                  <option value="auto">Tự động</option>
+                  <option value="daylight">Ánh sáng</option>
+                  <option value="cloudy">Mây</option>
+                  <option value="tungsten">Tungsten</option>
+                  <option value="fluorescent">Fluor</option>
+                </select>
+              </div>
+
+              {/* Night Vision */}
+              <div>
+                <label className="text-xs font-medium block mb-1">Chế độ ban đêm</label>
+                <select
+                  value={settings.nightVisionMode}
+                  onChange={(e) => setSettings({ ...settings, nightVisionMode: e.target.value as any })}
+                  className="w-full px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-primary/30"
+                >
+                  <option value="auto">Tự động</option>
+                  <option value="on">Bật</option>
+                  <option value="off">Tắt</option>
+                </select>
+              </div>
+
+              {/* Motion Detection */}
+              <div className="flex items-center justify-between pt-1">
+                <label className="text-xs font-medium">Phát hiện chuyển động</label>
+                <button
+                  onClick={() => setSettings({ ...settings, motionDetection: !settings.motionDetection })}
+                  className={`px-2 py-0.5 rounded text-xs font-medium transition-all ${
+                    settings.motionDetection
+                      ? 'bg-secondary text-white'
+                      : 'bg-gray-200 text-gray-600'
+                  }`}
+                >
+                  {settings.motionDetection ? 'Bật' : 'Tắt'}
+                </button>
+              </div>
+
+              {/* Motion Sensitivity */}
+              {settings.motionDetection && (
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-medium">Độ nhạy</label>
+                    <span className="text-xs text-text-secondary">{settings.motionSensitivity}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={settings.motionSensitivity}
+                    onChange={(e) => setSettings({ ...settings, motionSensitivity: parseInt(e.target.value) })}
+                    className="w-full h-1"
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="sticky bottom-0 p-3 border-t bg-white flex gap-2">
+          <button
+            onClick={resetToDefault}
+            className="flex-1 px-3 py-1.5 border border-gray-300 rounded hover:bg-gray-50 transition-colors text-xs font-medium"
+          >
+            Đặt Lại
+          </button>
+          <button
+            onClick={onClose}
+            className="flex-1 px-3 py-1.5 border border-gray-300 rounded hover:bg-gray-50 transition-colors text-xs font-medium"
+          >
+            Hủy
+          </button>
+          <button
+            onClick={handleSave}
+            className="flex-1 flex items-center justify-center gap-1 px-3 py-1.5 bg-primary text-white rounded hover:bg-primary/90 transition-colors text-xs font-medium"
+          >
+            <Save size={14} />
+            Lưu
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ==========================================
+// SUB-COMPONENT: CameraManager
+// ==========================================
+
+const CameraManager = ({
+  branch,
+  cameras,
+  onCamerasChange,
+  onClose
+}: {
+  branch: string;
+  cameras: Camera[];
+  onCamerasChange: (cameras: Camera[]) => void;
+  onClose: () => void;
+}) => {
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [expandedCamera, setExpandedCamera] = useState<string | null>(null);
+  const [formData, setFormData] = useState<Partial<Camera>>({
+    name: '',
+    zone: '',
+    rtspUrl: '',
+    resolution: '1920x1080',
+    frameRate: 30,
+    bitrate: '5Mbps',
+  });
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [testingUrl, setTestingUrl] = useState<string | null>(null);
+  const [testResult, setTestResult] = useState<'success' | 'error' | null>(null);
+  const [selectedCameraForSettings, setSelectedCameraForSettings] = useState<Camera | null>(null);
+
+  const filteredCameras = cameras.filter(c => c.branch === branch);
+
+  const resetForm = () => {
+    setFormData({
+      name: '',
+      zone: '',
+      rtspUrl: '',
+      resolution: '1920x1080',
+      frameRate: 30,
+      bitrate: '5Mbps',
+    });
+    setEditingId(null);
+    setShowAddForm(false);
+  };
+
+  const handleAddCamera = () => {
+    if (!formData.name || !formData.rtspUrl) {
+      alert('Vui lòng điền đầy đủ thông tin camera');
+      return;
+    }
+
+    const newCamera: Camera = {
+      id: Date.now().toString(),
+      name: formData.name,
+      zone: formData.zone || 'Chưa phân loại',
+      rtspUrl: formData.rtspUrl,
+      status: 'offline',
+      branch: branch,
+      resolution: formData.resolution,
+      frameRate: formData.frameRate,
+      bitrate: formData.bitrate,
+    };
+
+    onCamerasChange([...cameras, newCamera]);
+    resetForm();
+  };
+
+  const handleUpdateCamera = () => {
+    if (!formData.name || !formData.rtspUrl) {
+      alert('Vui lòng điền đầy đủ thông tin camera');
+      return;
+    }
+
+    onCamerasChange(
+      cameras.map(c =>
+        c.id === editingId
+          ? {
+              ...c,
+              name: formData.name || c.name,
+              zone: formData.zone || c.zone,
+              rtspUrl: formData.rtspUrl || c.rtspUrl,
+              resolution: formData.resolution || c.resolution,
+              frameRate: formData.frameRate || c.frameRate,
+              bitrate: formData.bitrate || c.bitrate,
+            }
+          : c
+      )
+    );
+    resetForm();
+  };
+
+  const handleDeleteCamera = (id: string) => {
+    if (confirm('Bạn chắc chắn muốn xóa camera này?')) {
+      onCamerasChange(cameras.filter(c => c.id !== id));
+    }
+  };
+
+  const startEditCamera = (camera: Camera) => {
+    setFormData(camera);
+    setEditingId(camera.id);
+    setShowAddForm(true);
+  };
+
+  const handleTestConnection = async (rtspUrl: string) => {
+    setTestingUrl(rtspUrl);
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    setTestResult(Math.random() > 0.3 ? 'success' : 'error');
+    setTimeout(() => {
+      setTestingUrl(null);
+      setTestResult(null);
+    }, 2000);
+  };
+
+  const getStatusIcon = (status: Camera['status']) => {
+    if (status === 'online') return <Wifi size={16} className="text-secondary" />;
+    if (status === 'weak') return <Wifi size={16} className="text-accent" />;
+    return <WifiOff size={16} className="text-alert" />;
+  };
+
+  const getStatusColor = (status: Camera['status']) => {
+    if (status === 'online') return 'bg-secondary text-white';
+    if (status === 'weak') return 'bg-accent text-white';
+    return 'bg-alert text-white';
+  };
+
+  const getStatusLabel = (status: Camera['status']) => {
+    if (status === 'online') return 'Trực tuyến';
+    if (status === 'weak') return 'Yếu';
+    return 'Ngoại tuyến';
+  };
+
+  const zones = ['Sảnh chính', 'Khu VIP', 'Tầng 1', 'Lối vào', 'Khu ăn ngoài', 'Khu bếp'];
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg w-full max-w-md max-h-[85vh] overflow-y-auto flex flex-col" style={{ boxShadow: 'var(--shadow-elevated)' }}>
+        {/* Header - Compact */}
+        <div className="sticky top-0 p-3 border-b bg-white flex items-center justify-between z-10">
+          <div>
+            <h3 className="font-semibold text-sm">Quản Lý Camera</h3>
+            <p className="text-xs text-text-secondary">{filteredCameras.length} camera</p>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1.5 hover:bg-gray-100 rounded transition-colors"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-2 space-y-1">
+          {/* Add Camera Button */}
+          {!showAddForm && (
+            <button
+              onClick={() => {
+                resetForm();
+                setShowAddForm(true);
+              }}
+              className="w-full flex items-center justify-center gap-1 px-2 py-1.5 bg-primary text-white rounded hover:bg-primary/90 transition-colors text-xs font-medium"
+            >
+              <Plus size={12} />
+              Thêm Camera
+            </button>
+          )}
+
+          {/* Add/Edit Form - Compact */}
+          {showAddForm && (
+            <div className="p-2 bg-blue-50 rounded border border-blue-200 space-y-1">
+              <h4 className="text-xs font-medium">
+                {editingId ? 'Chỉnh sửa' : 'Thêm camera'}
+              </h4>
+              
+              <div className="space-y-1">
+                <input
+                  type="text"
+                  value={formData.name || ''}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  placeholder="Tên camera *"
+                  className="w-full px-1.5 py-0.5 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-primary/30"
+                />
+
+                <select
+                  value={formData.zone || ''}
+                  onChange={(e) => setFormData({ ...formData, zone: e.target.value })}
+                  className="w-full px-1.5 py-0.5 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-primary/30"
+                >
+                  <option value="">Khu vực</option>
+                  {zones.map(z => (
+                    <option key={z} value={z}>{z}</option>
+                  ))}
+                </select>
+
+                <div className="flex gap-0.5">
+                  <input
+                    type="text"
+                    value={formData.rtspUrl || ''}
+                    onChange={(e) => setFormData({ ...formData, rtspUrl: e.target.value })}
+                    placeholder="RTSP URL *"
+                    className="flex-1 px-1.5 py-0.5 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-primary/30"
+                  />
+                  <button
+                    onClick={() => handleTestConnection(formData.rtspUrl || '')}
+                    disabled={!formData.rtspUrl || testingUrl === formData.rtspUrl}
+                    className="px-1.5 py-0.5 border border-gray-300 rounded hover:bg-gray-100 transition-colors disabled:opacity-40 text-xs"
+                  >
+                    {testingUrl === formData.rtspUrl ? '...' : 'Test'}
+                  </button>
+                </div>
+                {testingUrl === formData.rtspUrl && testResult && (
+                  <p className={`text-xs ${testResult === 'success' ? 'text-secondary' : 'text-alert'}`}>
+                    {testResult === 'success' ? '✓ OK' : '✗ Lỗi'}
+                  </p>
+                )}
+
+                <div className="grid grid-cols-3 gap-0.5">
+                  <select
+                    value={formData.resolution || '1920x1080'}
+                    onChange={(e) => setFormData({ ...formData, resolution: e.target.value })}
+                    className="px-1.5 py-0.5 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-primary/30"
+                  >
+                    <option value="1280x720">720p</option>
+                    <option value="1920x1080">1080p</option>
+                    <option value="2560x1440">1440p</option>
+                    <option value="3840x2160">4K</option>
+                  </select>
+                  <input
+                    type="number"
+                    value={formData.frameRate || 30}
+                    onChange={(e) => setFormData({ ...formData, frameRate: parseInt(e.target.value) })}
+                    min="15"
+                    max="60"
+                    placeholder="FPS"
+                    className="px-1.5 py-0.5 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-primary/30"
+                  />
+                  <select
+                    value={formData.bitrate || '5Mbps'}
+                    onChange={(e) => setFormData({ ...formData, bitrate: e.target.value })}
+                    className="px-1.5 py-0.5 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-primary/30"
+                  >
+                    <option value="2Mbps">2 Mbps</option>
+                    <option value="5Mbps">5 Mbps</option>
+                    <option value="10Mbps">10 Mbps</option>
+                    <option value="15Mbps">15 Mbps</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex gap-1">
+                <button
+                  onClick={editingId ? handleUpdateCamera : handleAddCamera}
+                  className="flex-1 flex items-center justify-center gap-0.5 py-1 bg-primary text-white rounded hover:bg-primary/90 transition-colors text-xs font-medium"
+                >
+                  <Save size={12} />
+                  {editingId ? 'Cập nhật' : 'Thêm'}
+                </button>
+                <button
+                  onClick={resetForm}
+                  className="flex-1 py-1 border border-gray-300 rounded hover:bg-gray-50 transition-colors text-xs"
+                >
+                  Hủy
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Camera List */}
+          <div className="space-y-1.5">
+            {filteredCameras.length === 0 ? (
+              <div className="text-center py-4 text-text-secondary">
+                <p className="text-xs">Chưa có camera nào được thêm</p>
+              </div>
+            ) : (
+              filteredCameras.map((camera) => (
+                <div
+                  key={camera.id}
+                  className="border border-gray-200 rounded overflow-hidden hover:border-gray-300 transition-colors"
+                >
+                  {/* Camera Item Header */}
+                  <button
+                    onClick={() => setExpandedCamera(expandedCamera === camera.id ? null : camera.id)}
+                    className="w-full p-2 flex items-center justify-between hover:bg-gray-50 transition-colors"
+                  >
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      {getStatusIcon(camera.status)}
+                      <div className="min-w-0 flex-1 text-left">
+                        <p className="text-xs font-medium truncate">{camera.name}</p>
+                        <p className="text-xs text-text-secondary truncate">{camera.zone}</p>
+                      </div>
+                      <span className={`text-xs px-1 py-0.5 rounded-full flex-shrink-0 ${getStatusColor(camera.status)}`}>
+                        {getStatusLabel(camera.status)}
+                      </span>
+                    </div>
+                    <ChevronDown size={12} className={`flex-shrink-0 ml-1 transition-transform ${expandedCamera === camera.id ? 'rotate-180' : ''}`} />
+                  </button>
+
+                  {/* Expanded Details */}
+                  {expandedCamera === camera.id && (
+                    <div className="border-t border-gray-200 bg-gray-50 p-2 space-y-1.5">
+                      <div className="grid grid-cols-2 gap-1.5 text-xs">
+                        <div className="bg-white p-1 rounded border border-gray-100">
+                          <p className="text-text-secondary/70 text-xs">Phân giải</p>
+                          <p className="font-medium text-xs">{camera.resolution || '1920x1080'}</p>
+                        </div>
+                        <div className="bg-white p-1 rounded border border-gray-100">
+                          <p className="text-text-secondary/70 text-xs">FPS</p>
+                          <p className="font-medium text-xs">{camera.frameRate || 30}</p>
+                        </div>
+                        <div className="bg-white p-1 rounded border border-gray-100">
+                          <p className="text-text-secondary/70 text-xs">Bitrate</p>
+                          <p className="font-medium text-xs">{camera.bitrate || '5Mbps'}</p>
+                        </div>
+                        <div className="bg-white p-1 rounded border border-gray-100">
+                          <p className="text-text-secondary/70 text-xs">RTSP</p>
+                          <p className="font-medium text-xs truncate">{camera.rtspUrl}</p>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-0.5">
+                        <button
+                          onClick={() => startEditCamera(camera)}
+                          className="flex-1 flex items-center justify-center gap-0.5 py-1 bg-white border border-gray-300 rounded hover:bg-gray-100 transition-colors text-xs font-medium"
+                        >
+                          <Edit2 size={11} />
+                          Sửa
+                        </button>
+                        <button
+                          onClick={() => setSelectedCameraForSettings(camera)}
+                          className="flex-1 flex items-center justify-center gap-0.5 py-1 bg-white border border-gray-300 rounded hover:bg-gray-100 transition-colors text-xs font-medium"
+                        >
+                          <Settings size={11} />
+                          Cài
+                        </button>
+                        <button
+                          onClick={() => handleDeleteCamera(camera.id)}
+                          className="flex-1 flex items-center justify-center gap-0.5 py-1 bg-white border border-alert text-alert rounded hover:bg-alert/5 transition-colors text-xs font-medium"
+                        >
+                          <Trash2 size={11} />
+                          Xóa
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="sticky bottom-0 p-2 border-t bg-white flex justify-end">
+          <button
+            onClick={onClose}
+            className="px-3 py-1 border border-gray-300 rounded hover:bg-gray-50 transition-colors text-xs font-medium"
+          >
+            Đóng
+          </button>
+        </div>
+
+        {/* Advanced Settings Modal */}
+        {selectedCameraForSettings && (
+          <CameraAdvancedSettings
+            camera={selectedCameraForSettings}
+            onUpdate={(camera) => {
+              onCamerasChange(
+                cameras.map(c =>
+                  c.id === camera.id ? camera : c
+                )
+              );
+              setSelectedCameraForSettings(null);
+            }}
+            onClose={() => setSelectedCameraForSettings(null)}
+          />
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ==========================================
+// MAIN COMPONENT - AIConfiguration
+// ==========================================
 
 export function AIConfiguration() {
   const [selectedBranch, setSelectedBranch] = useState('d1');
-  const [selectedCamera, setSelectedCamera] = useState<Camera | null>(null);
-  const [drawingTool, setDrawingTool] = useState<'select' | 'polygon' | 'line' | 'rectangle' | null>('select');
-  const [zones, setZones] = useState<Zone[]>([]);
-  const [selectedZone, setSelectedZone] = useState<Zone | null>(null);
-  const [isDrawing, setIsDrawing] = useState(false);
-  const [currentPoints, setCurrentPoints] = useState<{ x: number; y: number }[]>([]);
-  const [showAddCamera, setShowAddCamera] = useState(false);
-  const canvasRef = useRef<HTMLDivElement>(null);
-
-  // Mock camera data
-  const cameras: Camera[] = [
+  const [showCameraManager, setShowCameraManager] = useState(false);
+  const [cameras, setCameras] = useState<Camera[]>([
     { id: '1', name: 'Sảnh chính - Phía trước', zone: 'Sảnh chính', rtspUrl: 'rtsp://camera1.local', status: 'online', branch: 'd1' },
     { id: '2', name: 'Sảnh chính - Phía sau', zone: 'Sảnh chính', rtspUrl: 'rtsp://camera2.local', status: 'online', branch: 'd1' },
     { id: '3', name: 'Khu VIP', zone: 'Khu VIP', rtspUrl: 'rtsp://camera3.local', status: 'weak', branch: 'd1' },
     { id: '4', name: 'Cửa vào chính', zone: 'Lối vào', rtspUrl: 'rtsp://camera4.local', status: 'offline', branch: 'd1' },
-  ];
+  ]);
 
   const branches = [
     { id: 'd1', name: 'CN Quận 1' },
     { id: 'd3', name: 'CN Quận 3' },
     { id: 'd7', name: 'CN Quận 7' },
     { id: 'cg', name: 'CN Cầu Giấy' },
-  ];
-
-  // Mock zones for demo
-  const demoZones: Zone[] = [
-    {
-      id: 'zone1',
-      type: 'table',
-      points: [
-        { x: 100, y: 100 },
-        { x: 180, y: 100 },
-        { x: 180, y: 180 },
-        { x: 100, y: 180 },
-      ],
-      label: 'A1',
-      capacity: 4,
-    },
-    {
-      id: 'zone2',
-      type: 'table',
-      points: [
-        { x: 220, y: 100 },
-        { x: 300, y: 100 },
-        { x: 300, y: 180 },
-        { x: 220, y: 180 },
-      ],
-      label: 'A2',
-      capacity: 6,
-    },
-    {
-      id: 'zone3',
-      type: 'entrance',
-      points: [
-        { x: 400, y: 50 },
-        { x: 400, y: 350 },
-      ],
-      label: 'Đường đếm',
-    },
-    {
-      id: 'zone4',
-      type: 'ignore',
-      points: [
-        { x: 500, y: 100 },
-        { x: 600, y: 100 },
-        { x: 600, y: 200 },
-        { x: 500, y: 200 },
-      ],
-      label: 'Khu vực thu ngân',
-    },
   ];
 
   const getStatusIcon = (status: Camera['status']) => {
@@ -107,122 +713,7 @@ export function AIConfiguration() {
   const getStatusLabel = (status: Camera['status']) => {
     if (status === 'online') return 'Trực tuyến';
     if (status === 'weak') return 'Yếu';
-    return 'Ngoại tuyến';
-  };
-
-  const getZoneColor = (type: Zone['type']) => {
-    switch (type) {
-      case 'table': return '#2ECC71';
-      case 'walkway': return '#3498DB';
-      case 'ignore': return '#95A5A6';
-      case 'entrance': return '#F2A03D';
-    }
-  };
-
-  const getZoneTypeLabel = (type: Zone['type']) => {
-    switch (type) {
-      case 'table': return 'Bàn ăn';
-      case 'walkway': return 'Lối đi';
-      case 'ignore': return 'Loại trừ';
-      case 'entrance': return 'Lối vào/ra';
-    }
-  };
-
-  const handleCanvasClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!canvasRef.current || drawingTool === 'select') return;
-
-    const rect = canvasRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-
-    if (drawingTool === 'polygon') {
-      setCurrentPoints([...currentPoints, { x, y }]);
-      setIsDrawing(true);
-    } else if (drawingTool === 'line' && currentPoints.length < 2) {
-      setCurrentPoints([...currentPoints, { x, y }]);
-      if (currentPoints.length === 1) {
-        finishDrawing('entrance');
-      }
-    }
-  };
-
-  const finishDrawing = (type: Zone['type']) => {
-    if (currentPoints.length >= 2) {
-      const newZone: Zone = {
-        id: `zone-${Date.now()}`,
-        type,
-        points: [...currentPoints],
-        label: type === 'table' ? `Bàn mới` : `${getZoneTypeLabel(type)} mới`,
-      };
-      setZones([...zones, newZone]);
-      setCurrentPoints([]);
-      setIsDrawing(false);
-      setSelectedZone(newZone);
-    }
-  };
-
-  const renderZone = (zone: Zone) => {
-    if (zone.type === 'entrance' && zone.points.length === 2) {
-      const [p1, p2] = zone.points;
-      return (
-        <g key={zone.id}>
-          <line
-            x1={p1.x}
-            y1={p1.y}
-            x2={p2.x}
-            y2={p2.y}
-            stroke={getZoneColor(zone.type)}
-            strokeWidth="4"
-            className="cursor-pointer"
-            onClick={() => setSelectedZone(zone)}
-          />
-          <polygon
-            points={`${p2.x},${p2.y} ${p2.x - 10},${p2.y - 10} ${p2.x - 10},${p2.y + 10}`}
-            fill={getZoneColor(zone.type)}
-          />
-          <text
-            x={(p1.x + p2.x) / 2}
-            y={p1.y - 10}
-            fill={getZoneColor(zone.type)}
-            fontSize="12"
-            className="pointer-events-none"
-          >
-            {zone.label}
-          </text>
-        </g>
-      );
-    } else if (zone.points.length >= 3) {
-      const pointsStr = zone.points.map(p => `${p.x},${p.y}`).join(' ');
-      const centerX = zone.points.reduce((sum, p) => sum + p.x, 0) / zone.points.length;
-      const centerY = zone.points.reduce((sum, p) => sum + p.y, 0) / zone.points.length;
-
-      return (
-        <g key={zone.id}>
-          <polygon
-            points={pointsStr}
-            fill={getZoneColor(zone.type)}
-            fillOpacity="0.2"
-            stroke={getZoneColor(zone.type)}
-            strokeWidth="2"
-            className="cursor-pointer hover:fill-opacity-30"
-            onClick={() => setSelectedZone(zone)}
-          />
-          <text
-            x={centerX}
-            y={centerY}
-            fill={getZoneColor(zone.type)}
-            fontSize="14"
-            fontWeight="600"
-            textAnchor="middle"
-            dominantBaseline="middle"
-            className="pointer-events-none"
-          >
-            {zone.label}
-          </text>
-        </g>
-      );
-    }
-    return null;
+    return 'Ngoài tuyến';
   };
 
   const filteredCameras = cameras.filter(c => c.branch === selectedBranch);
@@ -248,11 +739,11 @@ export function AIConfiguration() {
             ))}
           </div>
           <button
-            onClick={() => setShowAddCamera(true)}
+            onClick={() => setShowCameraManager(true)}
             className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
           >
             <Plus size={18} />
-            Thêm Camera Mới
+            Quản Lý Camera
           </button>
         </div>
 
@@ -261,14 +752,9 @@ export function AIConfiguration() {
           <h3 className="mb-4">Camera đã kết nối</h3>
           <div className="grid grid-cols-4 gap-4">
             {filteredCameras.map((camera) => (
-              <button
+              <div
                 key={camera.id}
-                onClick={() => setSelectedCamera(camera)}
-                className={`p-4 rounded-lg border-2 transition-all ${
-                  selectedCamera?.id === camera.id
-                    ? 'border-primary bg-primary/5'
-                    : 'border-gray-200 hover:border-gray-300'
-                }`}
+                className="p-4 rounded-lg border-2 border-gray-200 hover:border-gray-300 transition-all"
               >
                 <div className="aspect-video bg-gray-900 rounded mb-3 flex items-center justify-center">
                   <Video size={32} className="text-white/50" />
@@ -283,259 +769,20 @@ export function AIConfiguration() {
                     </div>
                   </div>
                 </div>
-              </button>
+              </div>
             ))}
           </div>
         </div>
       </div>
 
-      {/* Main Canvas Area */}
-      {selectedCamera && (
-        <div className="flex gap-6 flex-1">
-          <div className="flex-1 bg-white rounded-lg p-6" style={{ boxShadow: 'var(--shadow-card)' }}>
-            {/* Toolbar */}
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h2>Vẽ vùng AI</h2>
-                <p className="text-sm text-text-secondary">{selectedCamera.name}</p>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
-                  <button
-                    onClick={() => setDrawingTool('select')}
-                    className={`p-2 rounded transition-colors ${
-                      drawingTool === 'select' ? 'bg-white shadow-sm' : 'hover:bg-gray-200'
-                    }`}
-                    title="Chọn"
-                  >
-                    <MousePointer size={18} />
-                  </button>
-                  <button
-                    onClick={() => {
-                      setDrawingTool('polygon');
-                      setCurrentPoints([]);
-                    }}
-                    className={`p-2 rounded transition-colors ${
-                      drawingTool === 'polygon' ? 'bg-white shadow-sm' : 'hover:bg-gray-200'
-                    }`}
-                    title="Vẽ đa giác"
-                  >
-                    <Circle size={18} />
-                  </button>
-                  <button
-                    onClick={() => {
-                      setDrawingTool('line');
-                      setCurrentPoints([]);
-                    }}
-                    className={`p-2 rounded transition-colors ${
-                      drawingTool === 'line' ? 'bg-white shadow-sm' : 'hover:bg-gray-200'
-                    }`}
-                    title="Vẽ đường"
-                  >
-                    <Minus size={18} />
-                  </button>
-                  <button
-                    onClick={() => {
-                      setDrawingTool('rectangle');
-                      setCurrentPoints([]);
-                    }}
-                    className={`p-2 rounded transition-colors ${
-                      drawingTool === 'rectangle' ? 'bg-white shadow-sm' : 'hover:bg-gray-200'
-                    }`}
-                    title="Vẽ hình chữ nhật"
-                  >
-                    <Square size={18} />
-                  </button>
-                </div>
-                <div className="h-6 w-px bg-gray-300"></div>
-                <button className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
-                  <Save size={18} />
-                  Lưu cấu hình
-                </button>
-                <button className="flex items-center gap-2 px-4 py-2 bg-secondary text-white rounded-lg hover:bg-secondary/90 transition-colors">
-                  <Play size={18} />
-                  Triển khai AI
-                </button>
-              </div>
-            </div>
-
-            {/* Canvas */}
-            <div className="relative">
-              <div
-                ref={canvasRef}
-                onClick={handleCanvasClick}
-                className="relative bg-gray-900 rounded-lg overflow-hidden cursor-crosshair"
-                style={{ height: '500px' }}
-              >
-                <div className="absolute inset-0 flex items-center justify-center text-white/50">
-                  <Video size={120} />
-                </div>
-                <div className="absolute top-4 left-4 bg-black/50 text-white px-3 py-1 rounded text-xs flex items-center gap-2">
-                  <div className="w-2 h-2 bg-secondary rounded-full animate-pulse"></div>
-                  {selectedCamera.name} - Live Preview
-                </div>
-
-                <svg className="absolute inset-0 w-full h-full pointer-events-none">
-                  {demoZones.map(renderZone)}
-                  {zones.map(renderZone)}
-
-                  {isDrawing && currentPoints.length > 0 && (
-                    <g>
-                      {currentPoints.map((point, index) => (
-                        <circle
-                          key={index}
-                          cx={point.x}
-                          cy={point.y}
-                          r="4"
-                          fill="#2ECC71"
-                        />
-                      ))}
-                      {currentPoints.length > 1 && (
-                        <polyline
-                          points={currentPoints.map(p => `${p.x},${p.y}`).join(' ')}
-                          stroke="#2ECC71"
-                          strokeWidth="2"
-                          fill="none"
-                        />
-                      )}
-                    </g>
-                  )}
-                </svg>
-
-                {isDrawing && drawingTool === 'polygon' && (
-                  <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/70 text-white px-4 py-2 rounded-lg text-sm">
-                    Nhấp để thêm điểm. Nhấp đúp hoặc Enter để hoàn thành.
-                  </div>
-                )}
-              </div>
-
-              <div className="flex items-center gap-6 mt-4 text-sm">
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded" style={{ backgroundColor: '#2ECC71' }}></div>
-                  <span>Vùng bàn ăn</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded" style={{ backgroundColor: '#F2A03D' }}></div>
-                  <span>Đếm vào/ra</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded" style={{ backgroundColor: '#3498DB' }}></div>
-                  <span>Lối đi</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded" style={{ backgroundColor: '#95A5A6' }}></div>
-                  <span>Loại trừ</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Zone Properties Panel */}
-          {selectedZone && (
-            <div className="w-80 bg-white rounded-lg p-4" style={{ boxShadow: 'var(--shadow-card)' }}>
-              <h3 className="mb-4">Thuộc tính vùng</h3>
-              <div className="space-y-3">
-                <div>
-                  <label className="block mb-2 text-xs text-text-secondary">Loại vùng</label>
-                  <select
-                    value={selectedZone.type}
-                    onChange={(e) => setSelectedZone({ ...selectedZone, type: e.target.value as Zone['type'] })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-                  >
-                    <option value="table">Bàn ăn</option>
-                    <option value="walkway">Lối đi</option>
-                    <option value="ignore">Vùng loại trừ</option>
-                    <option value="entrance">Lối vào/ra</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block mb-2 text-xs text-text-secondary">Nhãn / ID</label>
-                  <input
-                    type="text"
-                    value={selectedZone.label}
-                    onChange={(e) => setSelectedZone({ ...selectedZone, label: e.target.value })}
-                    placeholder="VD: A1"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-                  />
-                </div>
-                {selectedZone.type === 'table' && (
-                  <div>
-                    <label className="block mb-2 text-xs text-text-secondary">Sức chứa (ghế)</label>
-                    <input
-                      type="number"
-                      value={selectedZone.capacity || ''}
-                      onChange={(e) => setSelectedZone({ ...selectedZone, capacity: parseInt(e.target.value) })}
-                      placeholder="4"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-                    />
-                  </div>
-                )}
-                <button
-                  onClick={() => {
-                    setZones(zones.filter(z => z.id !== selectedZone.id));
-                    setSelectedZone(null);
-                  }}
-                  className="w-full flex items-center justify-center gap-2 py-2 border border-alert text-alert rounded-lg hover:bg-alert/5 transition-colors text-sm"
-                >
-                  <Trash2 size={16} />
-                  Xóa vùng
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Add Camera Modal */}
-      {showAddCamera && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg w-full max-w-md" style={{ boxShadow: 'var(--shadow-elevated)' }}>
-            <div className="p-6 border-b">
-              <h2>Thêm Camera Mới</h2>
-            </div>
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="block mb-2 text-text-secondary">Tên Camera</label>
-                <input
-                  type="text"
-                  placeholder="VD: Sảnh chính - Camera 1"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
-                />
-              </div>
-              <div>
-                <label className="block mb-2 text-text-secondary">Khu vực</label>
-                <select className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20">
-                  <option>Sảnh chính</option>
-                  <option>Khu VIP</option>
-                  <option>Tầng 1</option>
-                  <option>Lối vào</option>
-                </select>
-              </div>
-              <div>
-                <label className="block mb-2 text-text-secondary">RTSP URL</label>
-                <input
-                  type="text"
-                  placeholder="rtsp://..."
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
-                />
-              </div>
-              <button className="w-full py-2 border border-primary text-primary rounded-lg hover:bg-primary/5 transition-colors">
-                Kiểm tra kết nối
-              </button>
-            </div>
-            <div className="p-6 border-t flex gap-3">
-              <button
-                onClick={() => setShowAddCamera(false)}
-                className="flex-1 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-              >
-                Hủy
-              </button>
-              <button className="flex-1 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors">
-                Thêm Camera
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* Camera Manager Modal */}
+      {showCameraManager && (
+        <CameraManager
+          branch={selectedBranch}
+          cameras={cameras}
+          onCamerasChange={setCameras}
+          onClose={() => setShowCameraManager(false)}
+        />
       )}
     </div>
   );

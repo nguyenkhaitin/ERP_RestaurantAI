@@ -1,6 +1,13 @@
 import { useState } from 'react';
 import { Menu, Search, Bell, ChevronDown, ChevronLeft, ChevronRight, LayoutGrid, BarChart3, Users, Camera, 
-  LayoutDashboard, MapPin, CalendarDays, ClipboardCheck, DollarSign } from 'lucide-react';
+  LayoutDashboard, MapPin, CalendarDays, ClipboardCheck, DollarSign, TrendingUp, Grid3X3, Settings, LogOut } from 'lucide-react';
+
+interface UserInfo {
+  id: number;
+  ten_nhan_vien: string;
+  chuc_vu: string;
+  so_dien_thoai: string;
+}
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -8,15 +15,38 @@ interface LayoutProps {
   onModuleChange: (module: string) => void;
   currentSubModule?: string;
   onSubModuleChange?: (subModule: string) => void;
+  user?: UserInfo;
+  onLogout?: () => void;
 }
 
-export function Layout({ children, currentModule, onModuleChange, currentSubModule, onSubModuleChange }: LayoutProps) {
+export function Layout({ children, currentModule, onModuleChange, currentSubModule, onSubModuleChange, user, onLogout }: LayoutProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [notificationOpen, setNotificationOpen] = useState(false);
-  const [expandedMenu, setExpandedMenu] = useState<string | null>('hr'); // Mặc định mở HR
+  const [expandedMenu, setExpandedMenu] = useState<string | null>('floor'); // Mặc định mở Floor
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+
+  // Lấy initials từ tên nhân viên
+  const getUserInitials = () => {
+    if (!user?.ten_nhan_vien) return 'U';
+    const names = user.ten_nhan_vien.split(' ');
+    if (names.length >= 2) {
+      return names[names.length - 2][0] + names[names.length - 1][0];
+    }
+    return names[0].substring(0, 2).toUpperCase();
+  };
 
   const menuItems = [
-    { id: 'floor', icon: LayoutGrid, label: 'Vận hành Sàn', color: 'text-secondary' },
+    { 
+      id: 'floor', 
+      icon: LayoutGrid, 
+      label: 'Vận hành Sàn', 
+      color: 'text-secondary',
+      subItems: [
+        { id: 'dashboard', icon: TrendingUp, label: 'Tổng quan' },
+        { id: 'pos', icon: Grid3X3, label: 'Vận hành' },
+        { id: 'configuration', icon: Settings, label: 'Thiết lập' },
+      ]
+    },
     { id: 'analytics', icon: BarChart3, label: 'Quản trị & Phân tích', color: 'text-accent' },
     { 
       id: 'hr', 
@@ -157,11 +187,11 @@ export function Layout({ children, currentModule, onModuleChange, currentSubModu
           <div className="p-4 border-t border-white/10">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center">
-                <span>QT</span>
+                <span>{getUserInitials()}</span>
               </div>
               <div className="flex-1">
-                <div className="text-sm">Quản trị viên</div>
-                <div className="text-xs text-white/60">Quản lý</div>
+                <div className="text-sm">{user?.ten_nhan_vien || 'Người dùng'}</div>
+                <div className="text-xs text-white/60">{user?.chuc_vu || 'Nhân viên'}</div>
               </div>
             </div>
           </div>
@@ -206,10 +236,35 @@ export function Layout({ children, currentModule, onModuleChange, currentSubModu
             </div>
 
             {/* User Profile */}
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center text-white text-sm">
-                QT
-              </div>
+            <div className="relative">
+              <button
+                onClick={() => setUserMenuOpen(!userMenuOpen)}
+                className="flex items-center gap-2 p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <div className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center text-white text-sm">
+                  {getUserInitials()}
+                </div>
+                <ChevronDown size={16} className={`transition-transform ${userMenuOpen ? 'rotate-180' : ''}`} />
+              </button>
+              {userMenuOpen && (
+                <div className="absolute right-0 mt-2 w-64 bg-white rounded-lg shadow-elevated border border-gray-200 py-2 z-50">
+                  <div className="px-4 py-3 border-b">
+                    <div className="font-medium">{user?.ten_nhan_vien}</div>
+                    <div className="text-sm text-gray-500">{user?.chuc_vu}</div>
+                    <div className="text-xs text-gray-400 mt-1">{user?.so_dien_thoai}</div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setUserMenuOpen(false);
+                      onLogout?.();
+                    }}
+                    className="w-full flex items-center gap-3 px-4 py-3 text-red-600 hover:bg-red-50 transition-colors"
+                  >
+                    <LogOut size={18} />
+                    <span>Đăng xuất</span>
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </header>

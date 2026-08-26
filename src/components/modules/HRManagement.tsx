@@ -4,6 +4,7 @@ import {
   LayoutDashboard, MapPin, Users, CalendarDays, ClipboardCheck, DollarSign,
   Building2, Loader2, X, Filter
 } from 'lucide-react';
+import { HRDashboard } from './HRDashboard';
 
 // ==========================================
 // TYPESCRIPT INTERFACES - THEO API CONTRACT
@@ -24,6 +25,7 @@ interface Staff {
   status: string;
   avatar: string;
   branchName?: string;
+  branchId?: number;
 }
 
 interface Shift {
@@ -56,6 +58,16 @@ interface Payroll {
 interface HRManagementProps {
   activeSubModule?: string;
 }
+
+// ==========================================
+// API CONFIGURATION
+// ==========================================
+const API_BACKEND_URL = 'http://127.0.0.1:8000';
+
+// Ngrok headers - Required for ngrok free tier
+const NGROK_HEADERS = {
+  'ngrok-skip-browser-warning': 'true'
+};
 
 // ==========================================
 // MAIN COMPONENT
@@ -112,9 +124,10 @@ export function HRManagement({ activeSubModule = 'dashboard' }: HRManagementProp
     const diff = today.getDate() - day + (day === 0 ? -6 : 1); // Monday
     return new Date(today.setDate(diff));
   });
+  const [rosterBranchFilter, setRosterBranchFilter] = useState(''); // Filter chi nhánh
   const [isShiftModalOpen, setIsShiftModalOpen] = useState(false);
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
-  const [selectedCell, setSelectedCell] = useState<{shiftId: number, date: string} | null>(null);
+  const [selectedCell, setSelectedCell] = useState<{shiftId: number, date: string, existingAssignment?: any} | null>(null);
   const [shiftForm, setShiftForm] = useState({ name: '', startTime: '', endTime: '', maxCapacity: 3 });
   const [assignmentBranchFilter, setAssignmentBranchFilter] = useState('');
   const [isShiftSubmitting, setIsShiftSubmitting] = useState(false);
@@ -122,8 +135,10 @@ export function HRManagement({ activeSubModule = 'dashboard' }: HRManagementProp
   // State cho Attendance/Timesheet Module (Merged)
   const [timesheetData, setTimesheetData] = useState<any[]>([]);
   const [timePeriod, setTimePeriod] = useState<'month' | 'week' | 'today'>('month');
+  const [currentDate, setCurrentDate] = useState(new Date());
   const [attendanceSearchQuery, setAttendanceSearchQuery] = useState('');
   const [attendanceBranchFilter, setAttendanceBranchFilter] = useState('');
+  const [attendanceRoleFilter, setAttendanceRoleFilter] = useState('');
   const [showAttendanceFilter, setShowAttendanceFilter] = useState(false);
   const [selectedAttendanceCell, setSelectedAttendanceCell] = useState<{staffId: number, staffName: string, date: string, data: any} | null>(null);
 
@@ -133,13 +148,17 @@ export function HRManagement({ activeSubModule = 'dashboard' }: HRManagementProp
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   const [payrollSearchQuery, setPayrollSearchQuery] = useState('');
   const [payrollBranchFilter, setPayrollBranchFilter] = useState('');
+  const [payrollRoleFilter, setPayrollRoleFilter] = useState('');
   const [showPayrollFilter, setShowPayrollFilter] = useState(false);
   const [isPayrollConfigModalOpen, setIsPayrollConfigModalOpen] = useState(false);
   const [payrollConfigForm, setPayrollConfigForm] = useState({
-    staffId: '',
+    role: '',
+    staffId: '',  // Empty = apply to all staff with role, else specific staff
     type: 'THEO_GIO' as 'THEO_GIO' | 'THEO_THANG',
     amount: ''
   });
+  const [staffByRole, setStaffByRole] = useState<any[]>([]);
+  const [roleConfigs, setRoleConfigs] = useState<any[]>([]);
   const [isPayrollConfigSubmitting, setIsPayrollConfigSubmitting] = useState(false);
 
   // ==========================================
@@ -158,9 +177,9 @@ export function HRManagement({ activeSubModule = 'dashboard' }: HRManagementProp
         };
 
         const [branchesRes, staffRes, attendanceRes] = await Promise.all([
-            fetch('http://127.0.0.1:8000/api/branches', requestOptions),
-            fetch('http://127.0.0.1:8000/api/staff', requestOptions),
-            fetch('http://127.0.0.1:8000/api/attendance', requestOptions)
+            fetch(`${API_BACKEND_URL}/api/branches`, requestOptions),
+            fetch(`${API_BACKEND_URL}/api/staff`, requestOptions),
+            fetch(`${API_BACKEND_URL}/api/attendance`, requestOptions)
         ]);
         const [branchesData, staffData, attendanceDataRes] = await Promise.all([
           branchesRes.json(),
@@ -195,7 +214,7 @@ export function HRManagement({ activeSubModule = 'dashboard' }: HRManagementProp
         if (branchFilter) params.append('branchId', branchFilter);
 
         const queryString = params.toString();
-        const url = `http://127.0.0.1:8000/api/staff${queryString ? '?' + queryString : ''}`;
+        const url = `${API_BACKEND_URL}/api/staff${queryString ? '?' + queryString : ''}`;
 
         const response = await fetch(url, {
           headers: {
@@ -233,30 +252,46 @@ export function HRManagement({ activeSubModule = 'dashboard' }: HRManagementProp
         };
 
         // Fetch shift templates
-        const templatesRes = await fetch('http://127.0.0.1:8000/api/shift-templates', requestOptions);
+        const templatesRes = await fetch(`${API_BACKEND_URL}/api/shift-templates`, requestOptions);
         const templatesData = await templatesRes.json();
         setShiftTemplates(templatesData);
 
-        // Fetch roster assignments for current week
+        // REQUIRE branch selection - don't fetch roster without branch_id
+        if (!rosterBranchFilter) {
+          console.log('[FETCH ROSTER] ⚠️ Chưa chọn chi nhánh - Trả về mảng rỗng');
+          setRosterAssignments([]);
+          return;
+        }
+
+        // Fetch roster assignments for current week WITH BRANCH FILTER
         const weekEnd = new Date(currentWeekStart);
         weekEnd.setDate(weekEnd.getDate() + 6);
         
         const startStr = currentWeekStart.toISOString().split('T')[0];
         const endStr = weekEnd.toISOString().split('T')[0];
         
-        const rosterRes = await fetch(
-          `http://127.0.0.1:8000/api/roster?start_date=${startStr}&end_date=${endStr}`,
-          requestOptions
-        );
+        const params = new URLSearchParams();
+        params.append('start_date', startStr);
+        params.append('end_date', endStr);
+        params.append('branch_id', String(rosterBranchFilter)); // Ensure string format for URL
+        
+        const apiUrl = `${API_BACKEND_URL}/api/roster?${params.toString()}`;
+        console.log('[FETCH ROSTER] 📡 Calling API:', apiUrl);
+        console.log('[FETCH ROSTER] 📊 Params:', { branch_id: rosterBranchFilter, start_date: startStr, end_date: endStr });
+        
+        const rosterRes = await fetch(apiUrl, requestOptions);
         const rosterData = await rosterRes.json();
+        
+        console.log('[FETCH ROSTER] ✅ Received data:', rosterData.length, 'records');
         setRosterAssignments(rosterData);
       } catch (error) {
         console.error('Lỗi khi fetch roster data:', error);
+        setRosterAssignments([]);
       }
     };
 
     fetchRosterData();
-  }, [activeSubModule, currentWeekStart]);
+  }, [activeSubModule, currentWeekStart, rosterBranchFilter]);
 
   // ==========================================
   // FETCH ATTENDANCE/TIMESHEET DATA (Merged)
@@ -267,23 +302,23 @@ export function HRManagement({ activeSubModule = 'dashboard' }: HRManagementProp
       
       try {
         // Calculate date range based on time period
-        const today = new Date();
+        const referenceDate = new Date(currentDate);
         let startDate: Date;
-        let endDate: Date = new Date(today);
+        let endDate: Date = new Date(referenceDate);
         
         if (timePeriod === 'today') {
-          startDate = new Date(today);
+          startDate = new Date(referenceDate);
         } else if (timePeriod === 'week') {
           // Get Monday of this week
-          const day = today.getDay();
-          const diff = today.getDate() - day + (day === 0 ? -6 : 1);
-          startDate = new Date(today);
+          const day = referenceDate.getDay();
+          const diff = referenceDate.getDate() - day + (day === 0 ? -6 : 1);
+          startDate = new Date(referenceDate);
           startDate.setDate(diff);
           endDate = new Date(startDate);
           endDate.setDate(endDate.getDate() + 6);
         } else { // month
-          startDate = new Date(today.getFullYear(), today.getMonth(), 1);
-          endDate = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+          startDate = new Date(referenceDate.getFullYear(), referenceDate.getMonth(), 1);
+          endDate = new Date(referenceDate.getFullYear(), referenceDate.getMonth() + 1, 0);
         }
         
         const params = new URLSearchParams();
@@ -292,9 +327,10 @@ export function HRManagement({ activeSubModule = 'dashboard' }: HRManagementProp
         
         if (attendanceSearchQuery) params.append('search', attendanceSearchQuery);
         if (attendanceBranchFilter) params.append('branch_id', attendanceBranchFilter);
+        if (attendanceRoleFilter) params.append('role', attendanceRoleFilter);
         
         const response = await fetch(
-          `http://127.0.0.1:8000/api/timesheet?${params.toString()}`,
+          `${API_BACKEND_URL}/api/timesheet?${params.toString()}`,
           {
             headers: {
               'ngrok-skip-browser-warning': '69420',
@@ -311,7 +347,7 @@ export function HRManagement({ activeSubModule = 'dashboard' }: HRManagementProp
     };
     
     fetchTimesheetData();
-  }, [activeSubModule, timePeriod, attendanceSearchQuery, attendanceBranchFilter]);
+  }, [activeSubModule, timePeriod, attendanceSearchQuery, attendanceBranchFilter, attendanceRoleFilter, currentDate]);
 
   // ==========================================
   // FETCH PAYROLL SHEET DATA
@@ -326,9 +362,10 @@ export function HRManagement({ activeSubModule = 'dashboard' }: HRManagementProp
         params.append('year', selectedYear.toString());
         if (payrollSearchQuery) params.append('search', payrollSearchQuery);
         if (payrollBranchFilter) params.append('branch_id', payrollBranchFilter);
+        if (payrollRoleFilter) params.append('role', payrollRoleFilter);
         
         const response = await fetch(
-          `http://127.0.0.1:8000/api/payroll-sheet?${params.toString()}`,
+          `${API_BACKEND_URL}/api/payroll-sheet?${params.toString()}`,
           {
             headers: {
               'ngrok-skip-browser-warning': '69420',
@@ -345,7 +382,7 @@ export function HRManagement({ activeSubModule = 'dashboard' }: HRManagementProp
     };
     
     fetchPayrollSheet();
-  }, [activeSubModule, selectedMonth, selectedYear, payrollSearchQuery, payrollBranchFilter]);
+  }, [activeSubModule, selectedMonth, selectedYear, payrollSearchQuery, payrollBranchFilter, payrollRoleFilter]);
 
   // ==========================================
   // UTILITY FUNCTIONS
@@ -407,16 +444,16 @@ export function HRManagement({ activeSubModule = 'dashboard' }: HRManagementProp
 
   // Attendance/Timesheet utility functions
   const getAttendanceDateRange = () => {
-    const today = new Date();
+    const referenceDate = new Date(currentDate);
     let startDate: Date;
-    let endDate: Date = new Date(today);
+    let endDate: Date = new Date(referenceDate);
     
     if (timePeriod === 'today') {
-      return [today];
+      return [referenceDate];
     } else if (timePeriod === 'week') {
-      const day = today.getDay();
-      const diff = today.getDate() - day + (day === 0 ? -6 : 1);
-      startDate = new Date(today);
+      const day = referenceDate.getDay();
+      const diff = referenceDate.getDate() - day + (day === 0 ? -6 : 1);
+      startDate = new Date(referenceDate);
       startDate.setDate(diff);
       const dates = [];
       for (let i = 0; i < 7; i++) {
@@ -426,8 +463,8 @@ export function HRManagement({ activeSubModule = 'dashboard' }: HRManagementProp
       }
       return dates;
     } else { // month
-      startDate = new Date(today.getFullYear(), today.getMonth(), 1);
-      endDate = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+      startDate = new Date(referenceDate.getFullYear(), referenceDate.getMonth(), 1);
+      endDate = new Date(referenceDate.getFullYear(), referenceDate.getMonth() + 1, 0);
       const dates = [];
       for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
         dates.push(new Date(d));
@@ -466,12 +503,10 @@ export function HRManagement({ activeSubModule = 'dashboard' }: HRManagementProp
     
     let available = staffList.filter(s => !assignedStaffIds.includes(s.id));
     
-    // Filter by branch if selected
+    // Filter by branch if selected (CHỈ hiển thị nhân viên của chi nhánh đang chọn)
     if (assignmentBranchFilter) {
-      const branch = branches.find(b => b.id.toString() === assignmentBranchFilter);
-      if (branch) {
-        available = available.filter(s => s.branchName === branch.name);
-      }
+      const branchId = parseInt(assignmentBranchFilter);
+      available = available.filter(s => s.branchId === branchId);
     }
     
     return available;
@@ -520,7 +555,7 @@ export function HRManagement({ activeSubModule = 'dashboard' }: HRManagementProp
     try {
       if (modalMode === 'add') {
         // POST request
-        const response = await fetch('http://127.0.0.1:8000/api/branches', {
+        const response = await fetch(`${API_BACKEND_URL}/api/branches`, {
           method: 'POST',
           headers: { 
             'Content-Type': 'application/json',
@@ -545,7 +580,7 @@ export function HRManagement({ activeSubModule = 'dashboard' }: HRManagementProp
         }
       } else {
         // PUT request
-        const response = await fetch(`http://127.0.0.1:8000/api/branches/${editingBranchId}`, {
+        const response = await fetch(`${API_BACKEND_URL}/api/branches/${editingBranchId}`, {
           method: 'PUT',
           headers: { 
             'Content-Type': 'application/json',
@@ -588,7 +623,7 @@ export function HRManagement({ activeSubModule = 'dashboard' }: HRManagementProp
     }
 
     try {
-      const response = await fetch(`http://127.0.0.1:8000/api/branches/${branchId}`, {
+      const response = await fetch(`${API_BACKEND_URL}/api/branches/${branchId}`, {
         method: 'DELETE',
         headers: {
           'ngrok-skip-browser-warning': '69420'
@@ -666,7 +701,7 @@ export function HRManagement({ activeSubModule = 'dashboard' }: HRManagementProp
     try {
       if (staffModalMode === 'add') {
         // POST request
-        const response = await fetch('http://127.0.0.1:8000/api/staff', {
+        const response = await fetch(`${API_BACKEND_URL}/api/staff`, {
           method: 'POST',
           headers: { 
             'Content-Type': 'application/json',
@@ -693,7 +728,7 @@ export function HRManagement({ activeSubModule = 'dashboard' }: HRManagementProp
         }
       } else {
         // PUT request
-        const response = await fetch(`http://127.0.0.1:8000/api/staff/${editingStaffId}`, {
+        const response = await fetch(`${API_BACKEND_URL}/api/staff/${editingStaffId}`, {
           method: 'PUT',
           headers: { 
             'Content-Type': 'application/json',
@@ -738,7 +773,7 @@ export function HRManagement({ activeSubModule = 'dashboard' }: HRManagementProp
     }
 
     try {
-      const response = await fetch(`http://127.0.0.1:8000/api/staff/${staffId}`, {
+      const response = await fetch(`${API_BACKEND_URL}/api/staff/${staffId}`, {
         method: 'DELETE',
         headers: {
           'ngrok-skip-browser-warning': '69420'
@@ -809,7 +844,7 @@ export function HRManagement({ activeSubModule = 'dashboard' }: HRManagementProp
     setIsShiftSubmitting(true);
 
     try {
-      const response = await fetch('http://127.0.0.1:8000/api/shift-templates', {
+      const response = await fetch(`${API_BACKEND_URL}/api/shift-templates`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -840,9 +875,17 @@ export function HRManagement({ activeSubModule = 'dashboard' }: HRManagementProp
     }
   };
 
-  const openAssignModal = (shiftId: number, date: string) => {
-    setSelectedCell({ shiftId, date });
-    setAssignmentBranchFilter('');
+  const openAssignModal = (shiftId: number, date: string, existingAssignment?: any) => {
+    setSelectedCell({ shiftId, date, existingAssignment });
+    // Nếu có existing assignment, set branch filter theo branch của assignment đó
+    if (existingAssignment && existingAssignment.branchId) {
+      setAssignmentBranchFilter(existingAssignment.branchId.toString());
+    } else if (rosterBranchFilter) {
+      // Nếu đang filter branch, dùng branch filter hiện tại
+      setAssignmentBranchFilter(rosterBranchFilter);
+    } else {
+      setAssignmentBranchFilter('');
+    }
     setIsAssignModalOpen(true);
   };
 
@@ -858,7 +901,7 @@ export function HRManagement({ activeSubModule = 'dashboard' }: HRManagementProp
     try {
       const branchId = assignmentBranchFilter ? parseInt(assignmentBranchFilter) : null;
 
-      const response = await fetch('http://127.0.0.1:8000/api/assign-shift', {
+      const response = await fetch(`${API_BACKEND_URL}/api/assign-shift`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -875,9 +918,32 @@ export function HRManagement({ activeSubModule = 'dashboard' }: HRManagementProp
       const result = await response.json();
 
       if (response.ok && result.success) {
-        setRosterAssignments([...rosterAssignments, result.data]);
+        // Refresh roster data
+        const weekEnd = new Date(currentWeekStart);
+        weekEnd.setDate(weekEnd.getDate() + 6);
+        
+        const startStr = currentWeekStart.toISOString().split('T')[0];
+        const endStr = weekEnd.toISOString().split('T')[0];
+        
+        const params = new URLSearchParams();
+        params.append('start_date', startStr);
+        params.append('end_date', endStr);
+        if (rosterBranchFilter) params.append('branch_id', rosterBranchFilter);
+        
+        const refreshRes = await fetch(
+          `${API_BACKEND_URL}/api/roster?${params.toString()}`,
+          {
+            headers: {
+              'ngrok-skip-browser-warning': '69420',
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+        const refreshedData = await refreshRes.json();
+        setRosterAssignments(refreshedData);
+        
         closeAssignModal();
-        alert(result.message || 'Phân công ca thành công!');
+        alert(result.message || 'Phân công ca và tạo chấm công thành công!');
       } else {
         alert(result.detail || result.message || 'Lỗi khi phân công ca!');
       }
@@ -887,13 +953,23 @@ export function HRManagement({ activeSubModule = 'dashboard' }: HRManagementProp
     }
   };
 
-  const handleRemoveAssignment = async (assignmentId: number) => {
-    if (!window.confirm('Bạn có chắc muốn xóa phân công này?')) {
+  const handleChangeAssignment = async (newStaffId: number) => {
+    if (!selectedCell || !selectedCell.existingAssignment) return;
+
+    // Xóa assignment cũ trước
+    await handleRemoveAssignment(selectedCell.existingAssignment.id, false);
+    
+    // Tạo assignment mới
+    await handleAssignShift(newStaffId);
+  };
+
+  const handleRemoveAssignment = async (assignmentId: number, showConfirm: boolean = true) => {
+    if (showConfirm && !window.confirm('Bạn có chắc muốn xóa phân công này? (Sẽ xóa cả bản ghi chấm công)')) {
       return;
     }
 
     try {
-      const response = await fetch(`http://127.0.0.1:8000/api/roster/${assignmentId}`, {
+      const response = await fetch(`${API_BACKEND_URL}/api/roster/${assignmentId}`, {
         method: 'DELETE',
         headers: {
           'ngrok-skip-browser-warning': '69420'
@@ -903,8 +979,43 @@ export function HRManagement({ activeSubModule = 'dashboard' }: HRManagementProp
       const result = await response.json();
 
       if (response.ok && result.success) {
-        setRosterAssignments(rosterAssignments.filter(a => a.id !== assignmentId));
-        alert(result.message || 'Xóa phân công thành công!');
+        // Refresh roster data - CHỈ KHI ĐÃ CHỌN CHI NHÁNH
+        if (!rosterBranchFilter) {
+          setRosterAssignments([]);
+          if (showConfirm) {
+            closeAssignModal();
+            alert(result.message || 'Xóa phân công và chấm công thành công!');
+          }
+          return;
+        }
+
+        const weekEnd = new Date(currentWeekStart);
+        weekEnd.setDate(weekEnd.getDate() + 6);
+        
+        const startStr = currentWeekStart.toISOString().split('T')[0];
+        const endStr = weekEnd.toISOString().split('T')[0];
+        
+        const params = new URLSearchParams();
+        params.append('start_date', startStr);
+        params.append('end_date', endStr);
+        params.append('branch_id', String(rosterBranchFilter)); // ✅ Always append when branch selected
+        
+        const refreshRes = await fetch(
+          `${API_BACKEND_URL}/api/roster?${params.toString()}`,
+          {
+            headers: {
+              'ngrok-skip-browser-warning': '69420',
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+        const refreshedData = await refreshRes.json();
+        setRosterAssignments(refreshedData);
+        
+        if (showConfirm) {
+          closeAssignModal();
+          alert(result.message || 'Xóa phân công và chấm công thành công!');
+        }
       } else {
         alert(result.detail || result.message || 'Lỗi khi xóa phân công!');
       }
@@ -918,28 +1029,109 @@ export function HRManagement({ activeSubModule = 'dashboard' }: HRManagementProp
   // PAYROLL HANDLERS
   // ==========================================
   
-  const openPayrollConfigModal = () => {
+  // Load staff members when role is selected
+  const loadStaffByRole = async (role: string) => {
+    if (!role) {
+      setStaffByRole([]);
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_BACKEND_URL}/api/staff-by-role/${encodeURIComponent(role)}`, {
+        headers: { 'ngrok-skip-browser-warning': '69420' }
+      });
+      const data = await response.json();
+      setStaffByRole(data);
+    } catch (error) {
+      console.error('Error loading staff by role:', error);
+      setStaffByRole([]);
+    }
+  };
+
+  // Load existing config when role or staff is selected
+  const loadExistingConfig = async (role: string, staffId: string) => {
+    try {
+      const response = await fetch(`${API_BACKEND_URL}/api/payroll-config`, {
+        headers: { 'ngrok-skip-browser-warning': '69420' }
+      });
+      const data = await response.json();
+      setRoleConfigs(data.roleConfigs || []);
+
+      // Find matching config
+      let matchingConfig = null;
+      if (staffId) {
+        // Priority: staff-specific config
+        matchingConfig = data.staffConfigs.find((c: any) => 
+          c.role === role && c.staffId === parseInt(staffId)
+        );
+      }
+      
+      if (!matchingConfig && role) {
+        // Fallback: role config
+        matchingConfig = data.roleConfigs.find((c: any) => c.role === role);
+      }
+
+      if (matchingConfig) {
+        setPayrollConfigForm(prev => ({
+          ...prev,
+          type: matchingConfig.salaryType,
+          amount: matchingConfig.amount.toString()
+        }));
+      }
+    } catch (error) {
+      console.error('Error loading config:', error);
+    }
+  };
+
+  // Handle role selection
+  const handleRoleChange = async (role: string) => {
     setPayrollConfigForm({
+      role,
       staffId: '',
       type: 'THEO_GIO',
       amount: ''
     });
+    
+    await loadStaffByRole(role);
+    await loadExistingConfig(role, '');
+  };
+
+  // Handle staff selection
+  const handleStaffChange = async (staffId: string) => {
+    setPayrollConfigForm(prev => ({ ...prev, staffId }));
+    if (staffId) {
+      await loadExistingConfig(payrollConfigForm.role, staffId);
+    } else {
+      await loadExistingConfig(payrollConfigForm.role, '');
+    }
+  };
+
+  const openPayrollConfigModal = () => {
+    setPayrollConfigForm({
+      role: '',
+      staffId: '',
+      type: 'THEO_GIO',
+      amount: ''
+    });
+    setStaffByRole([]);
     setIsPayrollConfigModalOpen(true);
   };
 
   const closePayrollConfigModal = () => {
     setIsPayrollConfigModalOpen(false);
     setPayrollConfigForm({
+      role: '',
       staffId: '',
       type: 'THEO_GIO',
       amount: ''
     });
+    setStaffByRole([]);
   };
 
   const handlePayrollConfigSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!payrollConfigForm.staffId || !payrollConfigForm.amount) {
+    if (!payrollConfigForm.role || !payrollConfigForm.amount) {
       alert('Vui lòng điền đầy đủ thông tin!');
       return;
     }
@@ -953,14 +1145,15 @@ export function HRManagement({ activeSubModule = 'dashboard' }: HRManagementProp
     setIsPayrollConfigSubmitting(true);
 
     try {
-      const response = await fetch('http://127.0.0.1:8000/api/payroll-config', {
+      const response = await fetch(`${API_BACKEND_URL}/api/payroll-config`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'ngrok-skip-browser-warning': '69420'
         },
         body: JSON.stringify({
-          staffId: parseInt(payrollConfigForm.staffId),
+          role: payrollConfigForm.role,
+          staffId: payrollConfigForm.staffId ? parseInt(payrollConfigForm.staffId) : null,
           type: payrollConfigForm.type,
           amount: amount
         })
@@ -977,9 +1170,10 @@ export function HRManagement({ activeSubModule = 'dashboard' }: HRManagementProp
         params.append('year', selectedYear.toString());
         if (payrollSearchQuery) params.append('search', payrollSearchQuery);
         if (payrollBranchFilter) params.append('branch_id', payrollBranchFilter);
+        if (payrollRoleFilter) params.append('role', payrollRoleFilter);
         
         const refreshResponse = await fetch(
-          `http://127.0.0.1:8000/api/payroll-sheet?${params.toString()}`,
+          `${API_BACKEND_URL}/api/payroll-sheet?${params.toString()}`,
           {
             headers: {
               'ngrok-skip-browser-warning': '69420',
@@ -1022,65 +1216,7 @@ export function HRManagement({ activeSubModule = 'dashboard' }: HRManagementProp
           MODULE 1: DASHBOARD
       ========================================== */}
       {activeSubModule === 'dashboard' && (
-        <div className="space-y-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold">Dashboard</h1>
-              <p className="text-text-secondary">Tổng quan thống kê nhân sự</p>
-            </div>
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-            {/* Stats Cards */}
-            <div className="bg-white rounded-lg p-6 shadow-sm">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-gray-600">Tổng nhân viên</p>
-                  <p className="text-2xl font-bold text-primary">{staffList.length}</p>
-                </div>
-                <Users size={32} className="text-primary" />
-              </div>
-            </div>
-            
-            <div className="bg-white rounded-lg p-6 shadow-sm">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-gray-600">Chi nhánh</p>
-                  <p className="text-2xl font-bold text-accent">{branches.length}</p>
-                </div>
-                <Building2 size={32} className="text-accent" />
-              </div>
-            </div>
-            
-            <div className="bg-white rounded-lg p-6 shadow-sm">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-gray-600">Ca làm việc</p>
-                  <p className="text-2xl font-bold text-secondary">{shifts.length}</p>
-                </div>
-                <CalendarDays size={32} className="text-secondary" />
-              </div>
-            </div>
-            
-            <div className="bg-white rounded-lg p-6 shadow-sm">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-gray-600">Tổng lương tháng</p>
-                  <p className="text-xl font-bold text-green-600">
-                    {formatCurrency(payrollData.reduce((sum, p) => sum + p.totalSalary, 0))}
-                  </p>
-                </div>
-                <DollarSign size={32} className="text-green-600" />
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-lg p-12 text-center" style={{ boxShadow: 'var(--shadow-card)' }}>
-            <LayoutDashboard size={64} className="mx-auto text-gray-300 mb-4" />
-            <h3 className="text-xl font-semibold text-gray-600 mb-2">Dashboard chi tiết</h3>
-            <p className="text-gray-400">(Biểu đồ và phân tích sẽ được cập nhật)</p>
-          </div>
-        </div>
+        <HRDashboard />
       )}
 
       {/* ==========================================
@@ -1340,9 +1476,11 @@ export function HRManagement({ activeSubModule = 'dashboard' }: HRManagementProp
                     className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 bg-white"
                   >
                     <option value="">Tất cả vai trò</option>
-                    <option value="Quản lý">Quản lý</option>
-                    <option value="Nhân viên">Nhân viên</option>
                     <option value="Admin">Admin</option>
+                    <option value="Quản lý">Quản lý</option>
+                    <option value="Thu ngân">Thu ngân</option>
+                    <option value="Phục vụ">Phục vụ</option>
+                    <option value="Bếp">Bếp</option>
                   </select>
 
                   {/* Status Filter */}
@@ -1498,9 +1636,11 @@ export function HRManagement({ activeSubModule = 'dashboard' }: HRManagementProp
                       required
                     >
                       <option value="">-- Chọn chức vụ --</option>
-                      <option value="Quản trị">Quản trị</option>
+                      <option value="Admin">Admin (Toàn quyền)</option>
                       <option value="Quản lý">Quản lý</option>
-                      <option value="Nhân viên">Nhân viên</option>
+                      <option value="Thu ngân">Thu ngân</option>
+                      <option value="Phục vụ">Phục vụ</option>
+                      <option value="Bếp">Bếp</option>
                     </select>
                   </div>
 
@@ -1594,7 +1734,7 @@ export function HRManagement({ activeSubModule = 'dashboard' }: HRManagementProp
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-2xl font-bold">Xếp lịch làm việc</h1>
-              <p className="text-text-secondary">Phân ca cho nhân viên</p>
+              <p className="text-text-secondary">Phân ca cho nhân viên (Tự động tạo chấm công)</p>
             </div>
             <button 
               onClick={openShiftModal}
@@ -1605,125 +1745,176 @@ export function HRManagement({ activeSubModule = 'dashboard' }: HRManagementProp
             </button>
           </div>
 
-          {/* Week Navigation */}
-          <div className="bg-white p-4 rounded-lg flex items-center justify-between" style={{ boxShadow: 'var(--shadow-card)' }}>
-            <div className="flex items-center gap-2">
-              <Calendar size={20} className="text-primary" />
-              <span>
-                Tuần từ {formatDateDisplay(getWeekDates()[0])} - {formatDateDisplay(getWeekDates()[6])}
-              </span>
-            </div>
-            <div className="flex gap-2">
-              <button 
-                onClick={goToPreviousWeek}
-                className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+          {/* Bắt buộc: Chọn Chi nhánh làm việc - Compact Toolbar */}
+          <div className="bg-white p-4 rounded-lg border-2 border-blue-200" style={{ boxShadow: 'var(--shadow-card)' }}>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <Building2 size={20} className="text-blue-600" />
+                <label className="text-sm font-semibold text-gray-700">
+                  Chi nhánh làm việc <span className="text-red-500">*</span>
+                </label>
+              </div>
+              <select
+                value={rosterBranchFilter}
+                onChange={(e) => {
+                  console.log('[ROSTER] 🔄 Đổi chi nhánh:', e.target.value);
+                  setRosterBranchFilter(e.target.value);
+                }}
+                className="flex-1 max-w-xs px-4 py-2 border-2 border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white font-medium"
               >
-                <ChevronLeft size={20} />
-              </button>
-              <button 
-                onClick={goToThisWeek}
-                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-              >
-                Tuần này
-              </button>
-              <button 
-                onClick={goToNextWeek}
-                className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-              >
-                <ChevronRight size={20} />
-              </button>
+                <option value="">-- Chọn chi nhánh --</option>
+                {branches.map((branch) => (
+                  <option key={branch.id} value={branch.id}>
+                    {branch.name}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 
-          {/* Dynamic Roster Matrix */}
-          <div className="bg-white rounded-lg overflow-hidden" style={{ boxShadow: 'var(--shadow-card)' }}>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-gray-200 bg-gray-50">
-                    <th className="text-left py-4 px-6 text-sm text-text-secondary min-w-[120px]">Ca làm việc</th>
-                    {getWeekDates().map((date, idx) => (
-                      <th key={idx} className="text-center py-4 px-4 text-sm text-text-secondary min-w-[140px]">
-                        {weekDays[idx]}
-                        <div className="text-xs font-normal text-gray-400">{formatDateDisplay(date)}</div>
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {shiftTemplates.length === 0 ? (
-                    <tr>
-                      <td colSpan={8} className="py-12 text-center text-gray-400">
-                        <Clock size={48} className="mx-auto mb-2 opacity-30" />
-                        <p>Chưa có ca làm việc nào.</p>
-                        <p className="text-sm">Nhấn "Quản lý ca làm" để thêm ca mới.</p>
-                      </td>
-                    </tr>
-                  ) : (
-                    shiftTemplates.map((shift) => (
-                      <tr key={shift.id} className="border-b border-gray-100">
-                        <td className="py-4 px-6">
-                          <div className="flex items-center gap-2">
-                            <Clock size={16} className="text-primary" />
-                            <div>
-                              <div className="font-medium">{shift.name}</div>
-                              <div className="text-xs text-text-secondary">
-                                {shift.startTime}-{shift.endTime}
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                        {getWeekDates().map((date, dayIdx) => {
-                          const dateStr = formatDate(date);
-                          const assignments = getAssignmentsForCell(shift.id, dateStr);
-                          const slots = Array(shift.maxCapacity).fill(null).map((_, i) => assignments[i] || null);
-                          
-                          return (
-                            <td key={dayIdx} className="py-4 px-4">
-                              <div className="space-y-1">
-                                {slots.map((assignment, slotIndex) => (
-                                  <div key={slotIndex}>
-                                    {assignment ? (
-                                      <div className="group relative p-2 bg-blue-50 border border-blue-200 rounded text-xs text-center hover:bg-blue-100 transition-colors">
-                                        <div className="font-medium text-blue-900">{assignment.staffName}</div>
-                                        <div className="text-[10px] text-blue-700">
-                                          {assignment.branchName}
-                                        </div>
-                                        <button
-                                          onClick={() => handleRemoveAssignment(assignment.id)}
-                                          className="absolute top-1 right-1 p-0.5 bg-red-500 text-white rounded opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600"
-                                        >
-                                          <X size={12} />
-                                        </button>
-                                      </div>
-                                    ) : (
-                                      <button
-                                        onClick={() => openAssignModal(shift.id, dateStr)}
-                                        className="w-full p-2 border border-dashed border-gray-200 rounded text-xs text-center text-gray-400 hover:border-primary/30 hover:bg-primary/5 transition-colors"
-                                      >
-                                        + Thêm
-                                      </button>
-                                    )}
+          {/* Hiển thị nội dung dựa trên việc đã chọn chi nhánh chưa */}
+          {!rosterBranchFilter ? (
+            /* Chưa chọn chi nhánh - Hiển thị thông báo */
+            <div className="bg-white p-12 rounded-lg text-center" style={{ boxShadow: 'var(--shadow-card)' }}>
+              <div className="flex flex-col items-center justify-center gap-4">
+                <div className="p-6 bg-gray-100 rounded-full">
+                  <Calendar size={64} className="text-gray-400" />
+                </div>
+                <h3 className="text-xl font-semibold text-gray-700">
+                  Vui lòng chọn chi nhánh
+                </h3>
+                <p className="text-gray-500 max-w-md">
+                  Hãy chọn chi nhánh ở phần trên để xem bảng lịch làm việc và phân công ca cho nhân viên
+                </p>
+              </div>
+            </div>
+          ) : (
+            /* Đã chọn chi nhánh - Hiển thị lịch làm việc */
+            <>
+              {/* Week Navigation Toolbar */}
+              <div className="bg-white p-4 rounded-lg" style={{ boxShadow: 'var(--shadow-card)' }}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Calendar size={20} className="text-primary" />
+                    <span className="font-medium">
+                      Tuần từ {formatDateDisplay(getWeekDates()[0])} - {formatDateDisplay(getWeekDates()[6])}
+                    </span>
+                  </div>
+                  <div className="flex gap-2">
+                    <button 
+                      onClick={goToPreviousWeek}
+                      className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                      title="Tuần trước"
+                    >
+                      <ChevronLeft size={20} />
+                    </button>
+                    <button 
+                      onClick={goToThisWeek}
+                      className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-medium"
+                    >
+                      Tuần này
+                    </button>
+                    <button 
+                      onClick={goToNextWeek}
+                      className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                      title="Tuần sau"
+                    >
+                      <ChevronRight size={20} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Dynamic Roster Matrix */}
+              <div className="bg-white rounded-lg overflow-hidden" style={{ boxShadow: 'var(--shadow-card)' }}>
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-gray-200 bg-gray-50">
+                        <th className="text-left py-4 px-6 text-sm text-text-secondary min-w-[120px]">Ca làm việc</th>
+                        {getWeekDates().map((date, idx) => (
+                          <th key={idx} className="text-center py-4 px-4 text-sm text-text-secondary min-w-[140px]">
+                            {weekDays[idx]}
+                            <div className="text-xs font-normal text-gray-400">{formatDateDisplay(date)}</div>
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {shiftTemplates.length === 0 ? (
+                        <tr>
+                          <td colSpan={8} className="py-12 text-center text-gray-400">
+                            <Clock size={48} className="mx-auto mb-2 opacity-30" />
+                            <p>Chưa có ca làm việc nào.</p>
+                            <p className="text-sm">Nhấn "Quản lý ca làm" để thêm ca mới.</p>
+                          </td>
+                        </tr>
+                      ) : (
+                        shiftTemplates.map((shift) => (
+                          <tr key={shift.id} className="border-b border-gray-100">
+                            <td className="py-4 px-6">
+                              <div className="flex items-center gap-2">
+                                <Clock size={16} className="text-primary" />
+                                <div>
+                                  <div className="font-medium">{shift.name}</div>
+                                  <div className="text-xs text-text-secondary">
+                                    {shift.startTime}-{shift.endTime}
                                   </div>
-                                ))}
+                                </div>
                               </div>
                             </td>
-                          );
-                        })}
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
+                            {getWeekDates().map((date, dayIdx) => {
+                              const dateStr = formatDate(date);
+                              const assignments = getAssignmentsForCell(shift.id, dateStr);
+                              const slots = Array(shift.maxCapacity).fill(null).map((_, i) => assignments[i] || null);
+                              
+                              return (
+                                <td key={dayIdx} className="py-4 px-4">
+                                  <div className="space-y-1">
+                                    {slots.map((assignment, slotIndex) => (
+                                      <div key={slotIndex}>
+                                        {assignment ? (
+                                          <button
+                                            onClick={() => openAssignModal(shift.id, dateStr, assignment)}
+                                            className="w-full group relative p-2 bg-blue-50 border border-blue-200 rounded hover:bg-blue-100 hover:shadow-sm transition-all"
+                                          >
+                                            <div className="font-semibold text-blue-900 text-xs truncate">
+                                              {assignment.staffName}
+                                            </div>
+                                            <div className="text-[10px] text-gray-500 mt-0.5">
+                                              {staffList.find(s => s.id === assignment.staffId)?.role || 'Nhân viên'}
+                                            </div>
+                                          </button>
+                                        ) : (
+                                          <button
+                                            onClick={() => openAssignModal(shift.id, dateStr)}
+                                            className="w-full p-2 border border-dashed border-gray-200 rounded text-xs text-center text-gray-400 hover:border-primary/30 hover:bg-primary/5 transition-colors"
+                                          >
+                                            + Thêm
+                                          </button>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
 
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <p className="text-sm text-blue-800">
-              💡 <strong>Hướng dẫn:</strong> Mỗi ca có số slot động dựa trên "Số lượng tối đa". 
-              Click "+ Thêm" để phân công nhân viên. Hover vào slot đã có người để xóa.
-            </p>
-          </div>
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <p className="text-sm text-blue-800">
+                  💡 <strong>Hướng dẫn:</strong> Click vào ô đã có người để chỉnh sửa hoặc xóa. 
+                  Click "+ Thêm" để phân công nhân viên mới. Hệ thống sẽ tự động tạo chấm công khi phân ca thành công.
+                </p>
+              </div>
+            </>
+          )}
 
           {/* Modal: Shift Template Management */}
           {isShiftModalOpen && (
@@ -1855,77 +2046,179 @@ export function HRManagement({ activeSubModule = 'dashboard' }: HRManagementProp
             </div>
           )}
 
-          {/* Modal: Assign Staff to Shift */}
+          {/* Modal: Assign Staff to Shift (FIXED OVERFLOW & BUTTONS) */}
           {isAssignModalOpen && selectedCell && (
-            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-              <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4 max-h-[80vh] overflow-hidden flex flex-col">
-                <div className="flex items-center justify-between p-6 border-b">
-                  <h2 className="text-xl font-bold">Phân công nhân viên</h2>
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-lg shadow-xl w-full max-w-md max-h-[85vh] overflow-hidden flex flex-col">
+                {/* Modal Header - Fixed */}
+                <div className="flex items-center justify-between px-6 py-4 border-b bg-gradient-to-r from-primary/5 to-transparent">
+                  <div>
+                    <h2 className="text-xl font-bold text-gray-800">
+                      {selectedCell.existingAssignment ? 'Chỉnh sửa phân ca' : 'Phân công nhân viên'}
+                    </h2>
+                    <p className="text-sm text-gray-500 mt-1">
+                      {shiftTemplates.find(s => s.id === selectedCell.shiftId)?.name} • {selectedCell.date}
+                    </p>
+                  </div>
                   <button 
                     onClick={closeAssignModal}
-                    className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
+                    className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
                   >
-                    <X size={20} />
+                    <X size={20} className="text-gray-500" />
                   </button>
                 </div>
 
-                <div className="p-6 space-y-4 overflow-y-auto flex-1">
-                  {/* Shift info */}
-                  <div className="bg-gray-50 p-3 rounded-lg text-sm">
-                    <p><strong>Ca làm:</strong> {shiftTemplates.find(s => s.id === selectedCell.shiftId)?.name}</p>
-                    <p><strong>Ngày:</strong> {selectedCell.date}</p>
-                  </div>
-
-                  {/* Branch Filter */}
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Lọc theo chi nhánh</label>
-                    <select
-                      value={assignmentBranchFilter}
-                      onChange={(e) => setAssignmentBranchFilter(e.target.value)}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
-                    >
-                      <option value="">Tất cả chi nhánh</option>
-                      {branches.map((branch) => (
-                        <option key={branch.id} value={branch.id}>
-                          {branch.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Available Staff List */}
-                  <div>
-                    <label className="block text-sm font-medium mb-2">
-                      Chọn nhân viên ({getAvailableStaff(selectedCell.date).length} khả dụng)
-                    </label>
-                    <div className="space-y-2 max-h-[300px] overflow-y-auto">
-                      {getAvailableStaff(selectedCell.date).length === 0 ? (
-                        <p className="text-center text-gray-400 py-4">
-                          Không có nhân viên khả dụng cho ngày này
-                        </p>
-                      ) : (
-                        getAvailableStaff(selectedCell.date).map((staff) => (
-                          <button
-                            key={staff.id}
-                            onClick={() => handleAssignShift(staff.id)}
-                            className="w-full p-3 border border-gray-200 rounded-lg hover:border-primary hover:bg-primary/5 transition-colors text-left"
-                          >
+                {/* Modal Body - Scrollable Area (CRITICAL: max-h with overflow) */}
+                <div className="overflow-y-auto flex-1 px-6 py-4">
+                  <div className="space-y-4">
+                    {selectedCell.existingAssignment ? (
+                      /* ==================== EDIT MODE (Click ô đã có người) ==================== */
+                      <>
+                        {/* Current Staff Info */}
+                        <div>
+                          <label className="block text-sm font-semibold mb-2 text-gray-700">Nhân viên hiện tại:</label>
+                          <div className="p-4 bg-blue-50 border-2 border-blue-200 rounded-xl">
                             <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center text-primary font-semibold">
-                                {staff.avatar}
+                              <div className="w-12 h-12 bg-blue-500 rounded-full flex items-center justify-center text-white font-bold text-lg shadow-md">
+                                {selectedCell.existingAssignment.avatar || selectedCell.existingAssignment.staffName?.charAt(0)}
                               </div>
                               <div>
-                                <div className="font-medium">{staff.name}</div>
-                                <div className="text-xs text-gray-500">
-                                  {staff.role} • {staff.branchName || 'Chưa phân bổ'}
+                                <div className="font-bold text-gray-900">{selectedCell.existingAssignment.staffName}</div>
+                                <div className="text-sm text-gray-600">
+                                  {selectedCell.existingAssignment.role || 'Nhân viên'}
                                 </div>
                               </div>
                             </div>
-                          </button>
-                        ))
-                      )}
-                    </div>
+                          </div>
+                        </div>
+
+                        {/* Danh sách nhân viên thay thế */}
+                        <div>
+                          <label className="block text-sm font-semibold mb-2 text-gray-700">
+                            Thay thế bằng nhân viên khác:
+                          </label>
+                          
+                          {/* Filter chi nhánh */}
+                          <select
+                            value={assignmentBranchFilter}
+                            onChange={(e) => setAssignmentBranchFilter(e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 mb-3 text-sm bg-white"
+                          >
+                            <option value="">-- Lọc theo chi nhánh --</option>
+                            {branches.map((branch) => (
+                              <option key={branch.id} value={branch.id}>
+                                {branch.name}
+                              </option>
+                            ))}
+                          </select>
+                          
+                          {/* Dropdown chọn nhân viên */}
+                          <select
+                            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                            onChange={(e) => {
+                              const newStaffId = parseInt(e.target.value);
+                              if (newStaffId && window.confirm(`Bạn có muốn thay thế ${selectedCell.existingAssignment.staffName} bằng nhân viên này?`)) {
+                                handleChangeAssignment(newStaffId);
+                                e.target.value = ''; // Reset dropdown
+                              } else {
+                                e.target.value = ''; // Reset nếu cancel
+                              }
+                            }}
+                            defaultValue=""
+                          >
+                            <option value="">-- Chọn nhân viên thay thế ({getAvailableStaff(selectedCell.date).length} khả dụng) --</option>
+                            {getAvailableStaff(selectedCell.date).map((staff) => (
+                              <option key={staff.id} value={staff.id}>
+                                {staff.avatar} {staff.name} - {staff.role}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </>
+                    ) : (
+                      // ========== CHẾ ĐỘ THÊM MỚI (Click vào ô trống) ==========
+                      <>
+                        {/* Filter chi nhánh */}
+                        <div>
+                          <label className="block text-sm font-semibold mb-2 text-gray-700">
+                            Lọc theo chi nhánh
+                          </label>
+                          <select
+                            value={assignmentBranchFilter}
+                            onChange={(e) => setAssignmentBranchFilter(e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
+                          >
+                            <option value="">Tất cả chi nhánh</option>
+                            {branches.map((branch) => (
+                              <option key={branch.id} value={branch.id}>
+                                {branch.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Danh sách nhân viên khả dụng */}
+                        <div>
+                          <label className="block text-sm font-semibold mb-2 text-gray-700">
+                            Chọn nhân viên
+                          </label>
+                          
+                          {/* Dropdown chọn nhân viên */}
+                          <select
+                            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                            onChange={(e) => {
+                              const staffId = parseInt(e.target.value);
+                              if (staffId) {
+                                handleAssignShift(staffId);
+                                e.target.value = ''; // Reset dropdown
+                              }
+                            }}
+                            defaultValue=""
+                          >
+                            <option value="">-- Chọn nhân viên ({getAvailableStaff(selectedCell.date).length} khả dụng) --</option>
+                            {getAvailableStaff(selectedCell.date).map((staff) => (
+                              <option key={staff.id} value={staff.id}>
+                                {staff.avatar} {staff.name} - {staff.role} ({staff.branchName || 'Chưa phân bổ'})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </>
+                    )}
                   </div>
+                </div>
+
+                {/* Modal Footer - Fixed (ALWAYS VISIBLE, NOT SCROLLABLE) */}
+                <div className="border-t bg-gray-50 px-4 py-3 shrink-0">
+                  {selectedCell.existingAssignment ? (
+                    /* EDIT MODE FOOTER - Nút Xóa + Hủy */
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleRemoveAssignment(selectedCell.existingAssignment.id)}
+                        className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 text-white rounded-lg font-medium shadow-md hover:shadow-lg transition-all text-sm"
+                        style={{ backgroundColor: '#ef4444' }}
+                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#dc2626'}
+                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#ef4444'}
+                      >
+                        <Trash2 size={16} />
+                        Xóa khỏi ca
+                      </button>
+                      <button
+                        onClick={closeAssignModal}
+                        className="px-5 py-2.5 border-2 border-gray-300 rounded-lg hover:bg-gray-100 bg-white font-medium transition-colors text-sm"
+                      >
+                        Hủy
+                      </button>
+                    </div>
+                  ) : (
+                    /* ADD MODE FOOTER - 1 Button (Hủy only) */
+                    <button
+                      onClick={closeAssignModal}
+                      className="w-full px-4 py-2.5 border-2 border-gray-300 rounded-lg hover:bg-gray-100 bg-white font-medium transition-colors text-sm"
+                    >
+                      Hủy
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -1948,94 +2241,163 @@ export function HRManagement({ activeSubModule = 'dashboard' }: HRManagementProp
 
           {/* Toolbar */}
           <div className="bg-white rounded-lg p-4 shadow-sm">
-            <div className="flex flex-wrap items-center gap-4">
-              {/* Time Period Filter */}
+            {/* Top Bar: Time Navigation + Search + Filter Button */}
+            <div className="flex items-center gap-4">
+              {/* Time Navigation (Left) */}
               <div className="flex items-center gap-2">
-                <label className="text-sm font-medium text-gray-700">Thời gian:</label>
+                <button
+                  onClick={() => {
+                    const newDate = new Date(currentDate);
+                    if (timePeriod === 'week') newDate.setDate(newDate.getDate() - 7);
+                    else if (timePeriod === 'month') newDate.setMonth(newDate.getMonth() - 1);
+                    else newDate.setDate(newDate.getDate() - 1);
+                    setCurrentDate(newDate);
+                  }}
+                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                  title="Kỳ trước"
+                >
+                  <ChevronLeft size={20} />
+                </button>
+
                 <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
                   <button
                     onClick={() => setTimePeriod('today')}
-                    className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                    className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
                       timePeriod === 'today'
                         ? 'bg-white text-primary shadow-sm'
                         : 'text-gray-600 hover:text-gray-900'
                     }`}
                   >
-                    Hôm nay
+                    Ngày
                   </button>
                   <button
                     onClick={() => setTimePeriod('week')}
-                    className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                    className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
                       timePeriod === 'week'
                         ? 'bg-white text-primary shadow-sm'
                         : 'text-gray-600 hover:text-gray-900'
                     }`}
                   >
-                    Tuần này
+                    Tuần
                   </button>
                   <button
                     onClick={() => setTimePeriod('month')}
-                    className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                    className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
                       timePeriod === 'month'
                         ? 'bg-white text-primary shadow-sm'
                         : 'text-gray-600 hover:text-gray-900'
                     }`}
                   >
-                    Tháng này
+                    Tháng
                   </button>
                 </div>
+
+                <button
+                  onClick={() => {
+                    const newDate = new Date(currentDate);
+                    if (timePeriod === 'week') newDate.setDate(newDate.getDate() + 7);
+                    else if (timePeriod === 'month') newDate.setMonth(newDate.getMonth() + 1);
+                    else newDate.setDate(newDate.getDate() + 1);
+                    setCurrentDate(newDate);
+                  }}
+                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                  title="Kỳ sau"
+                >
+                  <ChevronRight size={20} />
+                </button>
+
+                <button
+                  onClick={() => setCurrentDate(new Date())}
+                  className="px-3 py-2 text-sm text-primary hover:bg-primary/10 rounded-lg transition-colors"
+                >
+                  Hôm nay
+                </button>
+
+                <span className="text-sm font-medium text-gray-700 ml-2">
+                  {currentDate.toLocaleDateString('vi-VN', { 
+                    year: 'numeric', 
+                    month: 'long',
+                    ...(timePeriod === 'today' && { day: 'numeric' })
+                  })}
+                </span>
               </div>
 
-              {/* Search */}
-              <div className="flex-1 min-w-[200px]">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                  <input
-                    type="text"
-                    placeholder="Tìm kiếm nhân viên..."
-                    value={attendanceSearchQuery}
-                    onChange={(e) => setAttendanceSearchQuery(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
-                  />
-                </div>
+              {/* Spacer */}
+              <div className="flex-1" />
+
+              {/* Search (Right) */}
+              <div className="relative w-64">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                <input
+                  type="text"
+                  placeholder="Tìm kiếm nhân viên..."
+                  value={attendanceSearchQuery}
+                  onChange={(e) => setAttendanceSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
+                />
               </div>
 
-              {/* Filter Toggle */}
+              {/* Filter Toggle Button */}
               <button
                 onClick={() => setShowAttendanceFilter(!showAttendanceFilter)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-colors ${
+                className={`flex items-center gap-2 px-4 py-2 border rounded-lg transition-colors ${
                   showAttendanceFilter
-                    ? 'bg-primary text-white border-primary'
-                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                    ? 'border-primary bg-primary/10 text-primary'
+                    : 'border-gray-300 hover:bg-gray-50 text-gray-700'
                 }`}
               >
                 <Filter size={18} />
-                Bộ lọc
+                <span className="font-medium">Bộ lọc</span>
+                {(attendanceBranchFilter || attendanceRoleFilter) && (
+                  <span className="ml-1 px-2 py-0.5 bg-primary text-white text-xs rounded-full">
+                    {[attendanceBranchFilter, attendanceRoleFilter].filter(Boolean).length}
+                  </span>
+                )}
               </button>
             </div>
 
-            {/* Filter Panel */}
+            {/* Filter Panel (Collapsible) */}
             {showAttendanceFilter && (
-              <div className="mt-4 pt-4 border-t border-gray-200">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Chi nhánh
-                    </label>
-                    <select
-                      value={attendanceBranchFilter}
-                      onChange={(e) => setAttendanceBranchFilter(e.target.value)}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
-                    >
-                      <option value="">Tất cả chi nhánh</option>
-                      {branches.map((branch) => (
-                        <option key={branch.id} value={branch.id}>
-                          {branch.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
+              <div className="flex flex-wrap items-center gap-3 pt-3 mt-3 border-t">
+                {/* Branch Filter */}
+                <select
+                  value={attendanceBranchFilter}
+                  onChange={(e) => setAttendanceBranchFilter(e.target.value)}
+                  className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 bg-white"
+                >
+                  <option value="">Tất cả chi nhánh</option>
+                  {branches.map((branch) => (
+                    <option key={branch.id} value={branch.id}>
+                      {branch.name}
+                    </option>
+                  ))}
+                </select>
+
+                {/* Role Filter */}
+                <select
+                  value={attendanceRoleFilter}
+                  onChange={(e) => setAttendanceRoleFilter(e.target.value)}
+                  className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 bg-white"
+                >
+                  <option value="">Tất cả vai trò</option>
+                  <option value="Quản lý">Quản lý</option>
+                  <option value="Thu ngân">Thu ngân</option>
+                  <option value="Phục vụ">Phục vụ</option>
+                  <option value="Bếp">Bếp</option>
+                </select>
+
+                {/* Clear Filters Button */}
+                {(attendanceBranchFilter || attendanceRoleFilter) && (
+                  <button
+                    onClick={() => {
+                      setAttendanceBranchFilter('');
+                      setAttendanceRoleFilter('');
+                    }}
+                    className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors border border-gray-300"
+                  >
+                    Xóa bộ lọc
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -2249,8 +2611,9 @@ export function HRManagement({ activeSubModule = 'dashboard' }: HRManagementProp
 
           {/* Toolbar */}
           <div className="bg-white rounded-lg p-4 shadow-sm">
-            <div className="flex flex-wrap items-center gap-4">
-              {/* Month/Year Selector */}
+            {/* Top Bar: Month/Year Selector + Search + Filter Button */}
+            <div className="flex items-center gap-4">
+              {/* Month/Year Selector (Left) */}
               <div className="flex items-center gap-2">
                 <label className="text-sm font-medium text-gray-700">Tháng:</label>
                 <select
@@ -2277,59 +2640,80 @@ export function HRManagement({ activeSubModule = 'dashboard' }: HRManagementProp
                 </select>
               </div>
 
-              {/* Search */}
-              <div className="flex-1 min-w-[200px]">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                  <input
-                    type="text"
-                    placeholder="Tìm kiếm nhân viên..."
-                    value={payrollSearchQuery}
-                    onChange={(e) => setPayrollSearchQuery(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
-                  />
-                </div>
+              {/* Spacer */}
+              <div className="flex-1" />
+
+              {/* Search (Right) */}
+              <div className="relative w-64">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                <input
+                  type="text"
+                  placeholder="Tìm kiếm nhân viên..."
+                  value={payrollSearchQuery}
+                  onChange={(e) => setPayrollSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
+                />
               </div>
 
-              {/* Filter Toggle */}
+              {/* Filter Toggle Button */}
               <button
                 onClick={() => setShowPayrollFilter(!showPayrollFilter)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-colors ${
+                className={`flex items-center gap-2 px-4 py-2 border rounded-lg transition-colors ${
                   showPayrollFilter
-                    ? 'bg-primary text-white border-primary'
-                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                    ? 'border-primary bg-primary/10 text-primary'
+                    : 'border-gray-300 hover:bg-gray-50 text-gray-700'
                 }`}
               >
                 <Filter size={18} />
-                Bộ lọc
+                <span className="font-medium">Bộ lọc</span>
+                {(payrollBranchFilter || payrollRoleFilter) && (
+                  <span className="ml-1 px-2 py-0.5 bg-primary text-white text-xs rounded-full">
+                    {[payrollBranchFilter, payrollRoleFilter].filter(Boolean).length}
+                  </span>
+                )}
               </button>
             </div>
 
-            {/* Filter Panel */}
+            {/* Filter Panel (Collapsible) */}
             {showPayrollFilter && (
-              <div className="mt-4 pt-4 border-t border-gray-200">
-                <div className="flex items-center gap-3">
-                  <label className="text-sm font-medium text-gray-700">Chi nhánh:</label>
-                  <select
-                    value={payrollBranchFilter}
-                    onChange={(e) => setPayrollBranchFilter(e.target.value)}
-                    className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
+              <div className="flex flex-wrap items-center gap-3 pt-3 mt-3 border-t">
+                {/* Branch Filter */}
+                <select
+                  value={payrollBranchFilter}
+                  onChange={(e) => setPayrollBranchFilter(e.target.value)}
+                  className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 bg-white"
+                >
+                  <option value="">Tất cả chi nhánh</option>
+                  {branches.map(branch => (
+                    <option key={branch.id} value={branch.id}>{branch.name}</option>
+                  ))}
+                </select>
+
+                {/* Role Filter */}
+                <select
+                  value={payrollRoleFilter}
+                  onChange={(e) => setPayrollRoleFilter(e.target.value)}
+                  className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 bg-white"
+                >
+                  <option value="">Tất cả vai trò</option>
+                  <option value="Quản lý">Quản lý</option>
+                  <option value="Thu ngân">Thu ngân</option>
+                  <option value="Bếp">Bếp</option>
+                  <option value="Phục vụ">Phục vụ</option>
+                </select>
+
+                {/* Clear Filters Button */}
+                {(payrollBranchFilter || payrollRoleFilter) && (
+                  <button
+                    onClick={() => {
+                      setPayrollBranchFilter('');
+                      setPayrollRoleFilter('');
+                    }}
+                    className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors border border-gray-300"
                   >
-                    <option value="">Tất cả chi nhánh</option>
-                    {branches.map(branch => (
-                      <option key={branch.id} value={branch.id}>{branch.name}</option>
-                    ))}
-                  </select>
-                  
-                  {payrollBranchFilter && (
-                    <button
-                      onClick={() => setPayrollBranchFilter('')}
-                      className="px-3 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
-                    >
-                      Xóa bộ lọc
-                    </button>
-                  )}
-                </div>
+                    Xóa bộ lọc
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -2372,7 +2756,14 @@ export function HRManagement({ activeSubModule = 'dashboard' }: HRManagementProp
                       return (
                         <tr key={staff.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
                           <td className="px-6 py-4">
-                            <div className="font-medium text-gray-900">{staff.name}</div>
+                            <div className="flex items-center gap-2">
+                              <div className="font-medium text-gray-900">{staff.name}</div>
+                              {staff.hasCustomConfig && (
+                                <span className="px-2 py-0.5 text-[10px] font-semibold bg-orange-100 text-orange-700 rounded border border-orange-300">
+                                  Cấu hình riêng
+                                </span>
+                              )}
+                            </div>
                           </td>
                           <td className="px-6 py-4">
                             <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${getRoleBadgeColor(staff.role)}`}>
@@ -2449,25 +2840,54 @@ export function HRManagement({ activeSubModule = 'dashboard' }: HRManagementProp
                 </div>
 
                 <form onSubmit={handlePayrollConfigSubmit} className="p-6 space-y-4">
-                  {/* Staff Selection */}
+                  {/* Role Selection */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Nhân viên <span className="text-red-500">*</span>
+                      Vai trò <span className="text-red-500">*</span>
                     </label>
                     <select
-                      value={payrollConfigForm.staffId}
-                      onChange={(e) => setPayrollConfigForm({ ...payrollConfigForm, staffId: e.target.value })}
+                      value={payrollConfigForm.role}
+                      onChange={(e) => handleRoleChange(e.target.value)}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
                       required
                     >
-                      <option value="">-- Chọn nhân viên --</option>
-                      {staffList.map(staff => (
-                        <option key={staff.id} value={staff.id}>
-                          {staff.name} ({staff.role})
-                        </option>
-                      ))}
+                      <option value="">-- Chọn vai trò --</option>
+                      <option value="Phục vụ">Phục vụ</option>
+                      <option value="Thu ngân">Thu ngân</option>
+                      <option value="Bếp">Bếp</option>
+                      <option value="Quản lý">Quản lý</option>
                     </select>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Cấu hình này sẽ áp dụng cho <strong>tất cả nhân sự</strong> có vai trò này
+                    </p>
                   </div>
+
+                  {/* Staff Selection (Optional - Only if role selected) */}
+                  {payrollConfigForm.role && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Nhân viên cụ thể (Tùy chọn)
+                      </label>
+                      <select
+                        value={payrollConfigForm.staffId}
+                        onChange={(e) => handleStaffChange(e.target.value)}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
+                      >
+                        <option value="">-- Áp dụng cho toàn bộ vai trò --</option>
+                        {staffByRole.map(staff => (
+                          <option key={staff.id} value={staff.id}>
+                            {staff.name}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="mt-1 text-xs text-gray-500">
+                        {payrollConfigForm.staffId 
+                          ? '🎯 Cấu hình riêng cho nhân viên này (ghi đè cấu hình vai trò)'
+                          : 'Nếu không chọn, sẽ áp dụng cho tất cả nhân viên có vai trò này'
+                        }
+                      </p>
+                    </div>
+                  )}
 
                   {/* Salary Type */}
                   <div>

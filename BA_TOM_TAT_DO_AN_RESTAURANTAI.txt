@@ -1,0 +1,224 @@
+BẢN TÓM TẮT ĐỒ ÁN RESTAURANTAI (GÓC NHÌN BUSINESS ANALYST)
+===========================================================
+
+Vai trò trình bày: Ứng viên BA đang giới thiệu đồ án với nhà tuyển dụng.
+Mục tiêu tài liệu: Trình bày rõ những gì đã làm, nhấn mạnh logic nghiệp vụ, khả năng phân tích và triển khai end-to-end.
+
+
+1) TỔNG QUAN ĐỒ ÁN
+------------------
+Tên hệ thống: RestaurantAI / RestaurantOS
+Loại sản phẩm: Nền tảng quản lý vận hành nhà hàng theo thời gian thực, kết hợp POS + HR + AI Camera + AI Chat truy vấn dữ liệu.
+
+Mục tiêu nghiệp vụ chính:
+- Chuẩn hóa vận hành sàn: trạng thái bàn, đặt bàn, check-in, thanh toán, giám sát cảnh báo.
+- Chuẩn hóa vận hành nhân sự: chi nhánh, hồ sơ nhân viên, phân ca, chấm công, tính lương.
+- Tăng độ tin cậy dữ liệu vận hành bằng cơ chế đồng bộ xuyên module.
+- Hỗ trợ quản lý ra quyết định nhanh qua dashboard và AI Chat truy vấn dữ liệu tự nhiên.
+
+
+2) PHẠM VI NGHIỆP VỤ ĐÃ TRIỂN KHAI
+----------------------------------
+A. Vận hành sàn (Floor Operations)
+- Quản lý khu vực (zone), bàn (table), trạng thái bàn theo thời gian thực.
+- Quy trình đặt bàn → check-in → phục vụ → thanh toán.
+- Quản lý menu: danh mục và món.
+- Cảnh báo AI: overstay, ghost table, sai lệch AI vs POS.
+
+B. Tổ chức – Nhân sự (HR Management)
+- Quản lý chi nhánh và manager phụ trách chi nhánh.
+- Quản lý hồ sơ nhân viên có filter theo vai trò/trạng thái/chi nhánh/tìm kiếm.
+- Quản lý cấu hình ca làm (shift template).
+- Xếp lịch làm việc (roster) có ràng buộc chi nhánh + sức chứa ca.
+- Đồng bộ phân ca với chấm công tự động.
+- Bảng chấm công dạng ma trận theo ngày/tuần/tháng.
+- Cấu hình lương theo vai trò hoặc theo cá nhân.
+- Bảng lương tháng với rule ưu tiên cấu hình cá nhân > cấu hình theo vai trò.
+
+C. AI & Phân tích
+- AI camera xử lý video + YOLO tracking để suy luận bàn có khách, thời gian ngồi, cảnh báo.
+- Dashboard hybrid: dữ liệu realtime thật + analytics mock để demo trực quan.
+- AI Chat Text-to-SQL để hỏi dữ liệu bằng ngôn ngữ tự nhiên (có kiểm soát an toàn SQL).
+
+
+3) CÁC LOGIC NGHIỆP VỤ CỐT LÕI (ĐIỂM BA NỔI BẬT)
+------------------------------------------------
+3.1 Vòng đời bàn ăn (Table Lifecycle)
+- Trạng thái nghiệp vụ chính: empty / reserved / occupied.
+- Rule quan trọng:
+  1. Bàn chỉ được đặt khi đang empty.
+  2. Bàn reserved khi check-in thành công sẽ chuyển occupied và booking được mark completed.
+  3. Thanh toán thành công thì bàn bắt buộc quay về empty, hóa đơn chuyển paid.
+- Giá trị BA: mô hình trạng thái rõ ràng, giúp tránh xung đột thao tác và dễ đào tạo vận hành.
+
+3.2 Đặt bàn và check-in có món ngay
+- Có flow check-in nhận luôn danh sách món ban đầu.
+- Khi check-in:
+  - Tạo hóa đơn open.
+  - Ghi chi tiết món vào chi_tiet_hoa_don.
+  - Tính tạm tính + VAT + tổng tiền.
+  - Cập nhật trạng thái bàn và liên kết hóa đơn hiện tại.
+- Giá trị BA: giảm thao tác rời rạc, giúp đồng bộ dữ liệu giữa phục vụ và thu ngân.
+
+3.3 Thanh toán và giải phóng bàn theo transaction
+- Rule nghiệp vụ:
+  - Không cho thanh toán hóa đơn đã paid.
+  - Thanh toán thành công phải đồng thời update hóa đơn + reset trạng thái bàn.
+- Có cả hai đường thanh toán: theo invoice cụ thể và theo table state.
+- Giá trị BA: đảm bảo tính nhất quán dữ liệu tại điểm kết thúc dịch vụ.
+
+3.4 Quản lý chi nhánh và manager
+- Manager là optional khi tạo chi nhánh.
+- Nếu có manager, hệ thống tự gán nhân viên đó về chi nhánh mới.
+- Khi cập nhật manager chi nhánh:
+  - Hệ thống tháo manager cũ (nếu đổi).
+  - Gán manager mới vào chi nhánh.
+- Khi xóa chi nhánh:
+  - Chặn xóa nếu còn nhân viên thuộc chi nhánh.
+- Giá trị BA: kiểm soát ràng buộc tổ chức, tránh dữ liệu mồ côi.
+
+3.5 Quản lý nhân viên
+- CRUD nhân viên đầy đủ + filter đa điều kiện.
+- Avatar được auto-generate theo initials (tối ưu trải nghiệm UI không phụ thuộc ảnh thật).
+- Giá trị BA: tối ưu nhập liệu và hiển thị hồ sơ nhất quán.
+
+3.6 Xếp lịch làm việc (Roster) có kiểm soát năng lực vận hành
+- Bắt buộc chọn chi nhánh khi xem/phân ca (không chọn thì trả về rỗng).
+- Rule phân ca:
+  1. Nhân viên không được phân nhiều ca trong cùng ngày.
+  2. Mỗi ca có max capacity, vượt thì chặn.
+  3. Có branch context để tránh phân ca sai địa điểm.
+- Giá trị BA: biến yêu cầu vận hành thành các guard-rail cụ thể, ngăn lỗi từ đầu.
+
+3.7 Đồng bộ phân ca ↔ chấm công (Logic rất mạnh về nghiệp vụ)
+- Khi phân ca:
+  - Tạo bản ghi lịch làm việc.
+  - Tự động tạo hoặc cập nhật chấm công theo giờ bắt đầu/kết thúc của ca.
+- Khi hủy phân ca:
+  - Xóa lịch làm việc.
+  - Đồng bộ xóa luôn bản ghi chấm công tương ứng (theo nhân viên + ngày).
+- Giá trị BA: xử lý “single source of truth” giữa kế hoạch và thực tế công.
+
+3.8 Timesheet dạng ma trận cho quản lý
+- Trả dữ liệu theo cấu trúc matrix-friendly: mỗi nhân viên có attendance theo từng ngày.
+- Tính tổng giờ dựa trên check-in/check-out, hỗ trợ ca qua đêm.
+- Có filter theo thời gian, chi nhánh, vai trò, tìm kiếm.
+- Giá trị BA: trình bày dữ liệu đúng tư duy quản lý (so sánh ngang theo ngày, dọc theo nhân sự).
+
+3.9 Cấu hình lương và tính lương
+- Hai loại lương: THEO_GIO và THEO_THANG.
+- Ưu tiên cấu hình:
+  1) Cấu hình cá nhân (nếu có)
+  2) Cấu hình theo vai trò
+- Rule tính lương:
+  - Theo giờ: total_hours * base_rate
+  - Theo tháng: fixed_amount
+  - Chưa cấu hình: 0
+- Giá trị BA: tách “chính sách lương” khỏi “dữ liệu công”, giúp hệ thống linh hoạt khi thay đổi chính sách.
+
+3.10 AI Alerts và dashboard vận hành
+- Cảnh báo phát sinh từ trạng thái bàn:
+  - Overstay (ngồi quá lâu)
+  - Ghost table
+  - Sai lệch AI vs POS
+- Dashboard hybrid:
+  - Realtime thật từ AI state cache.
+  - Analytics mock để đảm bảo màn hình quản trị luôn có dữ liệu trình diễn.
+- Giá trị BA: cân bằng giữa tính thực tế vận hành và khả năng demo/POC.
+
+3.11 AI Chat Text-to-SQL có bảo vệ an toàn
+- Luồng nghiệp vụ:
+  1. Người dùng hỏi tiếng Việt tự nhiên.
+  2. AI sinh SQL.
+  3. Kiểm tra an toàn: chỉ cho phép SELECT/WITH; chặn DELETE/UPDATE/INSERT/... 
+  4. Thực thi query và trả lời tự nhiên.
+- Có fallback rule-based khi lỗi quota/API.
+- Giá trị BA: tạo trải nghiệm self-service data cho quản lý không biết SQL.
+
+
+4) KIẾN TRÚC VÀ DÒNG CHẢY DỮ LIỆU (GÓC BA)
+-----------------------------------------
+- Frontend: React + Vite (đa module theo vai trò nghiệp vụ).
+- Backend chính: FastAPI + PostgreSQL (đóng vai trò API transaction và business rules).
+- Thành phần AI:
+  - YOLO/OpenCV xử lý video + tracking.
+  - RAM cache có lock để phục vụ polling tần suất cao.
+- Dòng dữ liệu điển hình:
+  1. Người dùng thao tác UI (đặt bàn / phân ca / cấu hình lương).
+  2. API backend validate rule nghiệp vụ.
+  3. Ghi DB theo transaction.
+  4. Frontend refresh dữ liệu và hiển thị trạng thái mới.
+
+
+5) NHỮNG THỨ TÔI ĐÃ THỂ HIỆN VAI TRÒ BA TRONG ĐỒ ÁN
+---------------------------------------------------
+5.1 Tách module theo domain nghiệp vụ
+- Floor domain (vận hành sàn) và HR domain (tổ chức nhân sự) tách rõ.
+- Trong mỗi domain, tách tiếp theo lifecycle người dùng (dashboard/configuration/operation).
+
+5.2 Chuẩn hóa business rule thành điều kiện hệ thống
+- Các rule “không được xóa nếu đang có phụ thuộc”, “không được phân ca trùng”, “không thanh toán lại hóa đơn đã paid”… được encode thành API guard.
+
+5.3 Thiết kế luồng liên phòng ban
+- Roster không đứng riêng mà nối sang Attendance.
+- Attendance không đứng riêng mà nối sang Payroll.
+=> Tạo chuỗi nghiệp vụ xuyên suốt từ kế hoạch nhân lực đến chi phí lương.
+
+5.4 Thiết kế UX theo ngữ cảnh nghiệp vụ
+- Tab xử lý bàn đổi theo trạng thái bàn (occupied/reserved/empty).
+- Bộ lọc nhiều chiều giúp quản lý ra quyết định nhanh.
+- Modal thao tác có xác nhận cho hành động rủi ro.
+
+5.5 Định nghĩa KPI & cảnh báo quản trị
+- KPI vận hành bàn, số khách, occupancy, thời gian lưu bàn.
+- KPI nhân sự: tổng giờ, tỷ lệ đi làm, phân tích vai trò/chi nhánh.
+- Cảnh báo phục vụ hành động chứ không chỉ hiển thị số.
+
+
+6) CÁC KỸ THUẬT/THỰC HÀNH ĐÃ ÁP DỤNG (LIÊN QUAN BA)
+----------------------------------------------------
+- Transactional consistency cho các nghiệp vụ nhiều bước.
+- Data validation ở cả frontend và backend.
+- Filter/search đa điều kiện theo đúng nhu cầu quản trị.
+- Mapping dữ liệu backend -> cấu trúc hiển thị dashboard/timesheet.
+- Migration dữ liệu có chủ đích (ví dụ display_order cho drag-drop khu vực).
+- Fallback strategy (AI Chat fallback, dashboard mock analytics).
+
+
+7) ĐIỂM MẠNH ĐỒ ÁN KHI TRÌNH BÀY PHỎNG VẤN
+------------------------------------------
+- Không chỉ làm giao diện: đã xử lý đầy đủ business flow + rule + transaction.
+- Có tư duy tích hợp liên module (POS – HR – Payroll – AI).
+- Có khả năng chuyển yêu cầu nghiệp vụ thành API contract cụ thể.
+- Có tư duy quản trị dữ liệu vận hành và báo cáo.
+- Có lớp AI hỗ trợ quyết định và tự phục vụ truy vấn.
+
+
+8) GIỚI HẠN HIỆN TẠI VÀ HƯỚNG NÂNG CẤP (NÓI THẲNG, CHUYÊN NGHIỆP)
+------------------------------------------------------------------
+- Một số dashboard hiện dùng mock data (phục vụ demo).
+- Auth hiện đơn giản (password demo) -> nên nâng cấp RBAC, JWT, phân quyền theo vai trò.
+- Cần chuẩn hóa môi trường config bằng biến môi trường (DB/API key).
+- Cần bổ sung test nghiệp vụ tự động (integration test cho các flow transaction chính).
+- AI Chat cần tăng lớp governance (query allowlist, rate-limit, masking dữ liệu nhạy cảm).
+
+
+9) BÀI NÓI NGẮN GỌN KHI NHÀ TUYỂN DỤNG HỎI “BẠN ĐÃ LÀM GÌ?”
+-------------------------------------------------------------
+"Trong đồ án RestaurantAI, em đóng vai trò BA thiên về solution design. Em phân rã bài toán nhà hàng thành 2 domain lớn: vận hành sàn và quản trị nhân sự, sau đó chuẩn hóa toàn bộ vòng đời nghiệp vụ từ đặt bàn–phục vụ–thanh toán và từ phân ca–chấm công–tính lương.
+
+Điểm em tập trung nhất là business rules và tính nhất quán dữ liệu: ví dụ phân ca tự động đồng bộ chấm công, hủy phân ca thì rollback dữ liệu liên quan; bảng lương ưu tiên cấu hình lương cá nhân hơn vai trò; trạng thái bàn có lifecycle rõ để tránh thao tác sai.
+
+Ngoài ra em tích hợp AI camera cho cảnh báo vận hành theo thời gian thực, và AI Chat Text-to-SQL để quản lý hỏi dữ liệu bằng tiếng Việt nhưng vẫn đảm bảo an toàn truy vấn chỉ đọc. Em xem đây là một solution mang tính thực chiến vì vừa xử lý vận hành hằng ngày, vừa hỗ trợ quản trị ra quyết định." 
+
+
+10) KẾT LUẬN
+------------
+Đây là đồ án có chiều sâu BA rõ rệt: 
+- Có phân tích domain,
+- Có thiết kế rule,
+- Có kết nối liên quy trình,
+- Có đo lường KPI,
+- Có tư duy triển khai giải pháp số end-to-end.
+
+Nếu trình bày đúng trọng tâm như trên, nhà tuyển dụng sẽ thấy năng lực BA không chỉ ở tài liệu mà còn ở khả năng biến nghiệp vụ thành hệ thống chạy được, có kiểm soát và có giá trị vận hành.

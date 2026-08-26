@@ -1,0 +1,387 @@
+import cv2
+import numpy as np
+from ultralytics import YOLO
+import threading
+import time
+from collections import deque
+import math
+
+# --- CẤU HÌNH ---
+VIDEO_PATH = 'video.mp4'
+MODEL_PATH = 'yolov8l.pt' 
+
+# --- CẤU HÌNH DỊCH CHUYỂN VỊ TRÍ CHỮ (X, Y) ---
+TEXT_OFFSETS = {
+    0: (-60, -60), 1: (0, -40), 4: (0, 80)
+}
+
+# --- CẤU HÌNH ĐIỂM CHECK (UPDATED V27) ---
+CHECK_POINT_RATIOS = {
+    0: 0.75,  # B1: Gối
+    1: 0.45,  # B2: [SỬA ĐỔI] 0.45 = Giữa Cổ và Hông (Vùng Ngực)
+    5: 0.25,  # B6: Cổ/Vai (Tránh bị B2 che)
+    # Các bàn còn lại mặc định 0.75
+}
+
+# --- SỐ LƯỢNG GHẾ ---
+TABLE_CAPACITIES = [4, 12, 4, 4, 12, 6, 6, 4]
+
+# --- NGƯỠNG TỐC ĐỘ ---
+WALKING_THRESHOLD = 2.5 
+STRICT_TABLES = [1, 4, 5, 6, 7] 
+
+# --- DỮ LIỆU GIẢ LẬP POS ---
+SIMULATED_POS_DATA = {
+    0: 'OPEN', 1: 'OPEN', 2: 'CLOSED', 3: 'CLOSED',
+    4: 'OPEN', 5: 'CLOSED', 6: 'CLOSED', 7: 'CLOSED'
+}
+
+# --- TỌA ĐỘ BÀN ---
+table_polygons = [
+    # Index 0: B1
+    np.array([[525, 398], [568, 567], [456, 686], [325, 715], [191, 608], [127, 474], [444, 322]]),
+
+    # Index 1: B2
+    np.array([[832, 331], [644, 419], [518, 524], [499, 660], [503, 777], [613, 841], [749, 920], [835, 968], [1242, 489], [1197, 305], [980, 253]]),
+
+    # Index 2: B3
+    np.array([[206, 698], [377, 856], [322, 1075], [10, 1070], [5, 789]]),
+
+    # Index 3: B4
+    np.array([[72, 522], [158, 703], [3, 765], [5, 539]]),
+
+    # Index 4: B5
+    np.array([[1578, 408], [1626, 474], [1459, 996], [1168, 932], [1073, 829], [1130, 658], [1378, 365]]),
+
+    # Index 5: B6
+    np.array([[551, 276], [773, 183], [835, 297], [663, 402], [573, 380]]),
+
+    # Index 6: B7
+    np.array([[1159, 156], [1025, 266], [1040, 311], [1288, 354], [1340, 197]]) ,
+
+    # Index 7: B8
+    np.array([[1450, 360], [1638, 415], [1655, 291], [1485, 243]])
+]
+
+# --- VARIABLES ---
+current_frame = None       
+processed_data = None      
+is_running = True          
+lock = threading.Lock()
+dashboard_data = {'occupancy_rate': 0, 'total_guests': 0, 'avg_dwell_time': 0, 'table_details': [], 'alerts': []}
+
+class TableManager:
+    def __init__(self, table_id, max_capacity):
+        self.id = table_id
+        self.max_capacity = max_capacity
+        self.status = "TRONG" 
+        self.occupied_start_time = None
+        self.dwell_time = 0
+        self.current_headcount = 0
+        self.headcount_history = deque(maxlen=90)
+        self.entry_start_check = None
+        self.empty_start_check = None
+
+    def update(self, raw_headcount):
+        # OCCLUSION BONUS
+        final_count = raw_headcount
+        if self.id in [1, 4]: 
+            if raw_headcount >= 4: final_count += 1 
+            if raw_headcount >= 8: final_count += 1
+        final_count = min(final_count, self.max_capacity)
+
+        self.headcount_history.append(final_count)
+        
+        # SMOOTHING
+        if self.headcount_history:
+            history_list = list(self.headcount_history)
+            if len(history_list) < 10:
+                smooth_headcount = max(history_list)
+            else:
+                smooth_headcount = int(np.percentile(history_list, 90))
+        else:
+            smooth_headcount = 0
+            
+        self.current_headcount = smooth_headcount
+        has_people_stable = smooth_headcount > 0
+
+        # REAL-TIME LOGIC
+        if has_people_stable:
+            if self.entry_start_check is None:
+                self.entry_start_check = time.time()
+            self.empty_start_check = None
+        else:
+            if self.empty_start_check is None:
+                self.empty_start_check = time.time()
+            if time.time() - self.empty_start_check > 3.0:
+                self.entry_start_check = None
+
+        # ENTRY LOGIC
+        if self.status == "TRONG" and self.entry_start_check is not None:
+            duration_present = time.time() - self.entry_start_check
+            required_seconds = 5.0 
+            
+            if self.max_capacity >= 10:
+                if smooth_headcount <= 2: required_seconds = 20.0 
+                else: required_seconds = 5.0 
+            elif self.id == 7: required_seconds = 20.0
+            elif self.id in [5, 6]:
+                if smooth_headcount < 2: required_seconds = 25.0
+                else: required_seconds = 7.0
+
+            if duration_present > required_seconds:
+                self.status = "CO KHACH"
+                self.occupied_start_time = time.time()
+        
+        # EXIT LOGIC
+        elif self.status == "CO KHACH":
+            session_time = 0
+            if self.occupied_start_time:
+                session_time = time.time() - self.occupied_start_time
+
+            is_empty_now = False
+            if len(self.headcount_history) >= 20:
+                if max(list(self.headcount_history)[-20:]) == 0:
+                    is_empty_now = True
+            
+            if is_empty_now:
+                self.reset_table()
+                return
+
+            if self.empty_start_check is not None:
+                duration_empty = time.time() - self.empty_start_check
+                if duration_empty > 45.0:
+                    self.reset_table()
+
+        if self.status == "CO KHACH" and self.occupied_start_time:
+            self.dwell_time = int(time.time() - self.occupied_start_time)
+
+    def reset_table(self):
+        self.status = "TRONG"
+        self.occupied_start_time = None
+        self.dwell_time = 0
+        self.current_headcount = 0
+        self.entry_start_check = None
+
+    def get_info(self):
+        mins, secs = divmod(self.dwell_time, 60)
+        time_str = f"{mins:02d}:{secs:02d}"
+        pos_status = SIMULATED_POS_DATA.get(self.id, 'CLOSED')
+        
+        alert_type = "NONE"
+        if self.status == "CO KHACH" and pos_status == "CLOSED": alert_type = "KHACH AO"
+        elif self.status == "TRONG" and pos_status == "OPEN": alert_type = "QUEN DONG"
+        if mins > 60: alert_type = "NGOI LAU"
+        
+        return {
+            'id': self.id + 1, 'status': self.status, 'time_str': time_str, 
+            'seconds': self.dwell_time, 
+            'headcount': self.current_headcount, 'capacity': self.max_capacity, 'alert': alert_type
+        }
+
+def ai_worker():
+    global processed_data, is_running, dashboard_data
+    print("🚀 AI Started (V27: B2 Torso Checkpoint 0.45)")
+    table_managers = [TableManager(i, TABLE_CAPACITIES[i]) for i in range(len(table_polygons))]
+    model = YOLO(MODEL_PATH) 
+    
+    track_history = {} 
+
+    while is_running:
+        if current_frame is None: time.sleep(0.01); continue
+        
+        with lock: frame_to_process = current_frame.copy()
+        
+        target_w, target_h = 960, 540 
+        scale_w = 1920 / target_w
+        scale_h = 1080 / target_h
+        frame_small = cv2.resize(frame_to_process, (target_w, target_h))
+        
+        results = model.track(frame_small, persist=True, verbose=False, classes=[0], 
+                              conf=0.20, iou=0.65, tracker="bytetrack.yaml")
+        
+        temp_boxes = []
+        people_count_at_table = {i: 0 for i in range(len(table_polygons))}
+        total_guests = 0
+        
+        if results[0].boxes.id is not None:
+            boxes = results[0].boxes.xyxy.cpu().numpy().astype(int)
+            track_ids = results[0].boxes.id.cpu().numpy().astype(int)
+
+            for box, track_id in zip(boxes, track_ids):
+                x1, y1 = int(box[0] * scale_w), int(box[1] * scale_h)
+                x2, y2 = int(box[2] * scale_w), int(box[3] * scale_h)
+                
+                center_x, center_y = int((x1+x2)/2), int((y1+y2)/2)
+                
+                speed = 0
+                if track_id in track_history:
+                    prev_x, prev_y = track_history[track_id]
+                    speed = math.sqrt((center_x - prev_x)**2 + (center_y - prev_y)**2)
+                track_history[track_id] = (center_x, center_y)
+
+                in_table = False
+                for i, poly in enumerate(table_polygons):
+                    # Velocity Filter
+                    if i in STRICT_TABLES and speed > WALKING_THRESHOLD:
+                        continue 
+
+                    # CHECKPOINT RATIO (B2 = 0.45)
+                    ratio = CHECK_POINT_RATIOS.get(i, 0.75)
+                    
+                    check_y = int(y1 + (y2 - y1) * ratio)
+                    check_point = (int((x1+x2)/2), check_y)
+
+                    if cv2.pointPolygonTest(poly, check_point, False) >= 0:
+                        people_count_at_table[i] += 1
+                        in_table = True
+                        break 
+                
+                if in_table:
+                    color = (0, 255, 255)
+                    total_guests += 1
+                elif speed > WALKING_THRESHOLD:
+                    color = (50, 50, 50) 
+                else:
+                    color = (100, 100, 100)
+
+                temp_boxes.append((x1, y1, x2, y2, color)) 
+                
+        busy_tables, total_dwell_time, table_details, active_alerts = 0, 0, [], []
+        temp_visuals = []
+        
+        for i, poly in enumerate(table_polygons):
+            manager = table_managers[i]
+            manager.update(people_count_at_table[i])
+            info = manager.get_info()
+            table_details.append(info)
+            
+            if info['status'] == "CO KHACH":
+                busy_tables += 1
+                total_dwell_time += info['seconds']
+                poly_color = (0, 0, 200) 
+                if info['alert'] == "KHACH AO": poly_color = (0, 0, 139) 
+            else:
+                poly_color = (0, 200, 0)
+                if info['alert'] == "QUEN DONG": poly_color = (0, 215, 255)
+            
+            label = f"B{info['id']}"
+            if info['status'] == "CO KHACH": 
+                label += f"({info['headcount']}/{info['capacity']})"
+            
+            cx, cy = int(np.mean(poly[:,0])), int(np.mean(poly[:,1]))
+            offset_x, offset_y = TEXT_OFFSETS.get(i, (0, 0))
+            final_cx = cx + offset_x
+            final_cy = cy + offset_y
+
+            temp_visuals.append((poly, poly_color, label, (final_cx, final_cy)))
+            
+            if info['alert'] == "KHACH AO": active_alerts.append(f"B{info['id']}: KHACH AO")
+            if info['alert'] == "QUEN DONG": active_alerts.append(f"B{info['id']}: QUEN DONG POS")
+            if info['alert'] == "NGOI LAU": active_alerts.append(f"B{info['id']}: >60 phut")
+
+        occupancy_rate = int((busy_tables / len(table_polygons)) * 100)
+        avg_dwell = int(total_dwell_time / busy_tables // 60) if busy_tables > 0 else 0
+        
+        dashboard_data = {'occupancy_rate': occupancy_rate, 'total_guests': total_guests, 'avg_dwell_time': avg_dwell, 'table_details': table_details, 'alerts': active_alerts}
+        processed_data = {'boxes': temp_boxes, 'visuals': temp_visuals}
+
+def create_combined_dashboard(video_frame, data):
+    display_h = 576
+    display_w = 1024
+    video_resized = cv2.resize(video_frame, (display_w, display_h))
+    
+    sidebar_w = 320
+    sidebar = np.zeros((display_h, sidebar_w, 3), dtype=np.uint8)
+    sidebar[:] = (30, 30, 30) 
+
+    cv2.putText(sidebar, "HE THONG GIAM SAT", (15, 35), cv2.FONT_HERSHEY_DUPLEX, 0.7, (255, 255, 255), 1, cv2.LINE_AA)
+    cv2.line(sidebar, (15, 45), (sidebar_w - 15, 45), (100, 100, 100), 1)
+
+    cv2.putText(sidebar, "Ty Le Lap Day", (15, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (180, 180, 180), 1, cv2.LINE_AA)
+    occ_color = (0, 255, 100) if data['occupancy_rate'] < 70 else (0, 100, 255)
+    cv2.putText(sidebar, f"{data['occupancy_rate']}%", (200, 80), cv2.FONT_HERSHEY_DUPLEX, 0.75, occ_color, 1, cv2.LINE_AA)
+
+    cv2.putText(sidebar, "Tong Khach", (15, 115), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (180, 180, 180), 1, cv2.LINE_AA)
+    cv2.putText(sidebar, f"{data['total_guests']}", (200, 115), cv2.FONT_HERSHEY_DUPLEX, 0.75, (255, 100, 255), 1, cv2.LINE_AA)
+    
+    cv2.putText(sidebar, "TG Trung Binh", (15, 150), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (180, 180, 180), 1, cv2.LINE_AA)
+    cv2.putText(sidebar, f"{data['avg_dwell_time']}m", (200, 150), cv2.FONT_HERSHEY_DUPLEX, 0.75, (0, 255, 255), 1, cv2.LINE_AA)
+
+    cv2.line(sidebar, (15, 175), (sidebar_w - 15, 175), (80, 80, 80), 1)
+
+    y_start = 210
+    cv2.putText(sidebar, "BAN", (10, y_start), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (150, 150, 150), 1, cv2.LINE_AA)
+    cv2.putText(sidebar, "TT", (50, y_start), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (150, 150, 150), 1, cv2.LINE_AA)
+    cv2.putText(sidebar, "KHACH", (160, y_start), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (150, 150, 150), 1, cv2.LINE_AA)
+    cv2.putText(sidebar, "TIME", (240, y_start), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (150, 150, 150), 1, cv2.LINE_AA)
+    
+    for i, t in enumerate(data['table_details']):
+        y = y_start + 30 + (i * 30) 
+        cv2.putText(sidebar, f"B{t['id']}", (10, y), cv2.FONT_HERSHEY_DUPLEX, 0.6, (255, 255, 255), 1, cv2.LINE_AA)
+        
+        if t['status'] == "TRONG":
+            st_col = (100, 255, 100); st_txt = "TRONG"
+        else:
+            st_col = (100, 100, 255); st_txt = "KHACH"
+        cv2.putText(sidebar, st_txt, (50, y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, st_col, 1, cv2.LINE_AA)
+        
+        if t['status'] == "CO KHACH":
+            hc_txt = f"{t['headcount']}/{t['capacity']}"
+            col_hc = (0, 0, 255) if t['headcount'] > t['capacity'] else (255, 255, 255)
+        else:
+            hc_txt = f"-/{t['capacity']}"
+            col_hc = (100, 100, 100)
+        cv2.putText(sidebar, hc_txt, (165, y), cv2.FONT_HERSHEY_DUPLEX, 0.55, col_hc, 1, cv2.LINE_AA)
+        
+        cv2.putText(sidebar, t['time_str'], (240, y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1, cv2.LINE_AA)
+        
+        if t['alert'] != "NONE":
+            cv2.circle(sidebar, (300, y-5), 5, (0, 0, 255), -1)
+
+    if data['alerts']:
+        alert_bg_h = 100
+        cv2.rectangle(sidebar, (0, display_h - alert_bg_h), (sidebar_w, display_h), (0, 0, 60), -1)
+        cv2.putText(sidebar, "CANH BAO", (15, display_h - alert_bg_h + 20), cv2.FONT_HERSHEY_DUPLEX, 0.6, (0, 165, 255), 1, cv2.LINE_AA)
+        for i, alert in enumerate(data['alerts'][:3]):
+            cv2.putText(sidebar, f"> {alert}", (15, display_h - alert_bg_h + 45 + (i*20)), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1, cv2.LINE_AA)
+
+    final_view = np.hstack((video_resized, sidebar))
+    return final_view
+
+def main():
+    global current_frame, is_running
+    print(f"📂 Loading video: {VIDEO_PATH}")
+    cap = cv2.VideoCapture(VIDEO_PATH)
+    if not cap.isOpened(): return
+    ai_thread = threading.Thread(target=ai_worker); ai_thread.daemon = True; ai_thread.start()
+    print("✅ System Ready! (V27: B2 Torso Checkpoint 0.45)")
+    
+    while cap.isOpened():
+        start_time = time.time()
+        ret, frame = cap.read()
+        if not ret: cap.set(cv2.CAP_PROP_POS_FRAMES, 0); continue
+        
+        with lock: current_frame = frame.copy()
+        
+        if processed_data:
+            display_frame = frame.copy()
+            for poly, color, label, center in processed_data['visuals']:
+                cv2.polylines(display_frame, [poly], True, color, 2, cv2.LINE_AA)
+                cv2.putText(display_frame, label, (center[0]-20, center[1]), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255,255,255), 2, cv2.LINE_AA)
+            for x1, y1, x2, y2, color in processed_data['boxes']: 
+                cv2.rectangle(display_frame, (x1, y1), (x2, y2), color, 1)
+
+            final_ui = create_combined_dashboard(display_frame, dashboard_data)
+        else: 
+            loading_screen = np.zeros((576, 1024 + 320, 3), dtype=np.uint8)
+            cv2.putText(loading_screen, "Dang khoi tao AI...", (550, 280), cv2.FONT_HERSHEY_DUPLEX, 1.2, (0, 255, 255), 2)
+            final_ui = loading_screen
+            
+        cv2.imshow("Smart Restaurant Manager (V27)", final_ui)
+        
+        elapsed = time.time() - start_time
+        if cv2.waitKey(max(1, int((1/30 - elapsed) * 1000))) & 0xFF == ord('q'): is_running = False; break
+    cap.release(); cv2.destroyAllWindows()
+
+if __name__ == "__main__": main()
