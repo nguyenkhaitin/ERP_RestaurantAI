@@ -5,7 +5,7 @@
 
   export default defineConfig(({ command }) => ({
     plugins: [react()],
-    base: command === 'build' ? '/RestaurantAI/' : '/',
+    base: command === 'build' ? '/ERP_RestaurantAI/' : '/',
     resolve: {
       extensions: ['.js', '.jsx', '.ts', '.tsx', '.json'],
       alias: {

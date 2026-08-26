@@ -22,7 +22,6 @@ export function Login({ onLoginSuccess }: LoginProps) {
     e.preventDefault();
     setError('');
     
-    // Validation
     if (!phone.trim()) {
       setError('Vui lòng nhập số điện thoại');
       return;
@@ -35,7 +34,6 @@ export function Login({ onLoginSuccess }: LoginProps) {
     setLoading(true);
     
     try {
-      // API được proxy qua Vite dev server
       const response = await fetch('/api/login', {
         method: 'POST',
         headers: {
@@ -47,11 +45,9 @@ export function Login({ onLoginSuccess }: LoginProps) {
       let data;
       const contentType = response.headers.get('content-type');
       
-      // Check if response is JSON
       if (contentType && contentType.includes('application/json')) {
         data = await response.json();
       } else {
-        // If not JSON, try to read as text and show error
         const text = await response.text();
         throw new Error('Không thể kết nối với server. Vui lòng kiểm tra backend đang chạy.');
       }
@@ -61,9 +57,7 @@ export function Login({ onLoginSuccess }: LoginProps) {
       }
 
       if (data.success && data.user) {
-        // Lưu thông tin user vào localStorage
         localStorage.setItem('user', JSON.stringify(data.user));
-        // Gọi callback để chuyển sang giao diện chính
         onLoginSuccess(data.user);
       }
     } catch (err: any) {
@@ -75,44 +69,54 @@ export function Login({ onLoginSuccess }: LoginProps) {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center p-4">
-      {/* Login Card */}
-      <div className="w-full max-w-md">
-        <div className="bg-white rounded-xl shadow-2xl overflow-hidden">
+    <div className="relative h-screen w-screen overflow-hidden flex items-center justify-center font-sans select-none">
+      
+      {/* 🌟 ẢNH NỀN LẤY TỪ THƯ MỤC PUBLIC */}
+      <div 
+        className="absolute inset-0 w-full h-full bg-cover bg-center filter brightness-90 scale-105"
+        style={{ backgroundImage: "url('/restaurant-background.png')" }}
+      ></div>
+
+      {/* Lớp phủ mờ tối giúp làm nổi bật khung đăng nhập ở giữa */}
+      <div className="absolute inset-0 bg-slate-950/50 backdrop-blur-[2px]"></div>
+
+      {/* 🌟 KHUNG ĐĂNG NHẬP CHÍNH */}
+      <div className="relative z-10 w-full max-w-md p-4">
+        <div className="bg-white rounded-xl shadow-2xl overflow-hidden border border-slate-100">
+          
           {/* Header - Màu xanh #1c2a46 */}
-          <div className="px-8 py-12 text-center" style={{ backgroundColor: '#1c2a46' }}>
-            <div className="mb-4">
-              <div className="text-5xl font-bold text-white mb-2">ROS</div>
-              <div className="text-xl text-white font-semibold">RestaurantOS</div>
-              <div className="text-sm text-white mt-2">Hệ thống quản lý nhà hàng</div>
+          <div className="px-6 py-10 text-center" style={{ backgroundColor: '#1c2a46' }}>
+            <div>
+              <div className="text-4xl font-bold text-white mb-1">ROS</div>
+              <div className="text-lg text-white font-semibold">RestaurantOS</div>
+              <div className="text-xs text-white mt-1 opacity-90">Hệ thống quản lý nhà hàng</div>
             </div>
           </div>
 
           {/* Form - Nền trắng */}
-          <form onSubmit={handleSubmit} className="px-8 py-8 space-y-6">
-            {/* Error Message */}
+          <form onSubmit={handleSubmit} className="px-6 py-6 space-y-4">
             {error && (
-              <div className="flex items-center gap-3 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
-                <AlertCircle size={20} className="flex-shrink-0" />
-                <span className="text-sm">{error}</span>
+              <div className="flex items-center gap-3 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700">
+                <AlertCircle size={18} className="shrink-0" />
+                <span className="text-xs">{error}</span>
               </div>
             )}
 
             {/* Phone Input */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-xs font-medium text-gray-700 mb-1.5">
                 Số điện thoại
               </label>
               <div className="relative">
-                <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
-                  <Phone size={20} className="text-gray-400" />
+                <div className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
+                  <Phone size={18} />
                 </div>
                 <input
                   type="tel"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
                   placeholder="Nhập số điện thoại"
-                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-slate-500 outline-none transition-all"
+                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-slate-500 outline-none transition-all text-slate-900 text-sm"
                   disabled={loading}
                   autoComplete="tel"
                 />
@@ -121,19 +125,19 @@ export function Login({ onLoginSuccess }: LoginProps) {
 
             {/* Password Input */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-xs font-medium text-gray-700 mb-1.5">
                 Mật khẩu
               </label>
               <div className="relative">
-                <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
-                  <Lock size={20} className="text-gray-400" />
+                <div className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
+                  <Lock size={18} />
                 </div>
                 <input
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Nhập mật khẩu"
-                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-slate-500 outline-none transition-all"
+                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-slate-500 outline-none transition-all text-slate-900 text-sm"
                   disabled={loading}
                   autoComplete="current-password"
                 />
@@ -144,30 +148,30 @@ export function Login({ onLoginSuccess }: LoginProps) {
             <button
               type="submit"
               disabled={loading}
-              className="w-full disabled:bg-slate-400 text-white font-semibold py-3 px-4 rounded-lg transition-all flex items-center justify-center gap-2 shadow-lg hover:shadow-xl"
+              className="w-full disabled:bg-slate-400 text-white font-semibold py-2.5 px-4 rounded-lg transition-all flex items-center justify-center gap-2 shadow-lg hover:shadow-xl text-sm mt-2"
               style={{ backgroundColor: loading ? undefined : '#1c2a46' }}
-              onMouseEnter={(e) => !loading && (e.currentTarget.style.backgroundColor = '#243555')}
-              onMouseLeave={(e) => !loading && (e.currentTarget.style.backgroundColor = '#1c2a46')}
             >
               {loading ? (
                 <>
-                  <Loader2 size={20} className="animate-spin" />
+                  <Loader2 size={18} className="animate-spin" />
                   <span>Đang đăng nhập...</span>
                 </>
               ) : (
                 <>
-                  <LogIn size={20} />
+                  <LogIn size={18} />
                   <span>Đăng nhập</span>
                 </>
               )}
             </button>
           </form>
         </div>
-        {/* Footer */}
-        <div className="text-center mt-6 text-slate-600 text-sm">
+        
+        {/* Footer (Đã chuyển thành màu trắng tinh) */}
+        <div className="text-center mt-4 text-white text-xs font-medium drop-shadow-md">
           © 2026 RestaurantOS - Hệ thống quản lý nhà hàng thông minh
         </div>
       </div>
+
     </div>
   );
 }
